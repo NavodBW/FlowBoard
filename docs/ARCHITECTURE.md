@@ -391,3 +391,28 @@ screen and it sits directly below the workspace list, so a pointer over it is a 
 rather than a near miss on the workspace above. Archiving isn't a move, so it doesn't build
 a `MoveCardOp` — it calls through the shell, which owns what selection should do afterwards.
 The button is deliberately oversized: it has to be hittable while you're holding a card.
+
+
+## When the tree and the flag disagree
+
+Archiving is a soft delete: the row stays, `archived` flips, and the op removes the object
+from its parent collection so it leaves the screen. Two representations of one fact — and
+`Load()` only honoured one of them. It filtered archived *cards* out of lanes, but attached
+every board and workspace regardless of state.
+
+The result: deleting a workspace worked, and the next launch brought it back. Worse, it came
+back **visible but flagged archived**, so anything filtering on the flag disagreed with what
+was plainly on screen. The "last workspace" guard counted `Count(w => !w.Archived)` == 1
+while the sidebar showed two, and refused to delete either.
+
+Load now attaches only live objects to the tree, and indexes *everything* by id — the tree
+holds what's live, the indices hold what exists, and undoing an archive can still find its
+object. The guard now counts the collection itself rather than re-filtering the flag: one
+source of truth beats two that can drift apart.
+
+This is the third bug in a row that only `Load()` running could expose, because the
+`DateTimeStyles` throw meant it never had. One dead code path was hiding a queue of others.
+
+**Known gap:** the Archive view lists cards only. A deleted workspace or board is
+recoverable with Ctrl+Z within the session, but after a restart it's unreachable — the rows
+are still in the database, with nothing in the UI to bring them back.

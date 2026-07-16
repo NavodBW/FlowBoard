@@ -73,7 +73,13 @@ public sealed partial class ShellViewModel : ObservableObject
     public Action? RequestShowArchive { get; set; }
     public Action? RequestShowLabels { get; set; }
     public Func<bool, string?>? RequestFilePath { get; set; }
+    /// <summary>Ask a yes/no question. Returns the answer.</summary>
     public Func<string, bool>? RequestConfirm { get; set; }
+
+    /// <summary>State a fact. Separate from RequestConfirm because a message with only one
+    /// possible response must not be dressed up as a choice — an OK/Cancel box for "this
+    /// can't be deleted" invites the user to cancel something that isn't happening.</summary>
+    public Action<string>? RequestNotify { get; set; }
     public Action? RequestFocusSearch { get; set; }
 
     public ShellViewModel(BoardModel model, UndoRedoService undo, AppSettings settings, FlowBoardStore store)
@@ -381,10 +387,12 @@ public sealed partial class ShellViewModel : ObservableObject
         var target = ws ?? ActiveWorkspace;
         if (target is null) return;
 
-        // The last workspace can't go: an empty sidebar has no way back to a board.
-        if (Model.Workspaces.Count(w => !w.Archived) <= 1)
+        // The last live workspace can't go: an empty sidebar has no way back to a board.
+        // Counts the collection itself, which now holds only live workspaces — the flag and
+        // the collection agreeing is exactly the thing that was broken before.
+        if (Model.Workspaces.Count <= 1)
         {
-            RequestConfirm?.Invoke(
+            RequestNotify?.Invoke(
                 "This is the only workspace, so it can't be deleted." + Environment.NewLine + Environment.NewLine
                 + "Make another one first if you want to move on from this.");
             return;
@@ -449,7 +457,7 @@ public sealed partial class ShellViewModel : ObservableObject
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            RequestConfirm?.Invoke($"Couldn't write the export:\n{e.Message}");
+            RequestNotify?.Invoke($"Couldn't write the export:{Environment.NewLine}{e.Message}");
         }
     }
 
@@ -469,7 +477,7 @@ public sealed partial class ShellViewModel : ObservableObject
         }
         catch (Exception e) when (e is IOException or InvalidDataException or System.Text.Json.JsonException)
         {
-            RequestConfirm?.Invoke($"That file couldn't be imported:\n{e.Message}");
+            RequestNotify?.Invoke($"That file couldn't be imported:{Environment.NewLine}{e.Message}");
             return;
         }
 

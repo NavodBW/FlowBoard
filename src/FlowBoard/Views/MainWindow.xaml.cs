@@ -57,6 +57,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         vm.RequestConfirm = message => MessageBox.Show(this, message, "FlowBoard",
             MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK;
 
+        vm.RequestNotify = message => MessageBox.Show(this, message, "FlowBoard",
+            MessageBoxButton.OK, MessageBoxImage.Information);
+
         vm.RequestFilePath = saving =>
         {
             if (saving)

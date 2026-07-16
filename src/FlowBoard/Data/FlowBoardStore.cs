@@ -242,14 +242,25 @@ public sealed class FlowBoardStore : IDisposable
             ModifiedUtc = Time(r, "modified_utc"),
         }))
         {
-            foreach (var b in boards.Where(b => b.WorkspaceId == ws.Id).OrderBy(b => b.Position))
+            // Archived boards and workspaces are loaded but NOT attached to the live tree.
+            //
+            // Archiving is a soft delete: the flag flips and the op drops the object from the
+            // collection so it leaves the screen. If load re-attached everything, deleted
+            // boards and workspaces would quietly come back on the next launch — and worse,
+            // they'd be visible while still counting as archived, so anything that filters on
+            // the flag (the "last workspace" guard, for one) would disagree with what the user
+            // can plainly see.
+            foreach (var b in boards.Where(b => b.WorkspaceId == ws.Id && !b.Archived).OrderBy(b => b.Position))
                 ws.Boards.Add(b);
 
-            model.Workspaces.Add(ws);
-            model.Index(ws);
+            model.WorkspacesById[ws.Id] = ws;
+            if (!ws.Archived) model.Workspaces.Add(ws);
         }
 
-        // Archived cards are still reachable by id (Archive view, undo of an archive).
+        // Index everything by id regardless of state. The tree holds only what's live, but
+        // undoing an archive has to find the object again, and the Archive view reads the
+        // card index directly.
+        foreach (var b in boards) model.BoardsById[b.Id] = b;
         foreach (var c in cards) model.CardsById[c.Id] = c;
 
         return model;

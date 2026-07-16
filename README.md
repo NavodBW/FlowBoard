@@ -15,5 +15,3 @@ dotnet restore
 dotnet build -c Release
 dotnet run --project src/FlowBoard/FlowBoard.csproj
 ```
-
-## NavodBW
