@@ -1,0 +1,228 @@
+<ui:FluentWindow x:Class="FlowBoard.Views.CardDetailWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:local="clr-namespace:FlowBoard.Views"
+        xmlns:vm="clr-namespace:FlowBoard.ViewModels"
+        xmlns:domain="clr-namespace:FlowBoard.Domain"
+        Title="Card"
+        Width="720" Height="760"
+        MinWidth="560" MinHeight="480"
+        WindowBackdropType="Mica"
+        ExtendsContentIntoTitleBar="True"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Window.Resources>
+        <local:HexToBrushConverter x:Key="HexBrush" />
+        <local:ActivityTextConverter x:Key="ActivityText" />
+        <local:CountToVisibilityConverter x:Key="CountToVisibility" />
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <local:InverseBooleanToVisibilityConverter x:Key="NotBoolToVisibility" />
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Card" />
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,4,20,12">
+            <StackPanel>
+
+                <ui:TextBox x:Name="TitleBox" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
+                            FontSize="18" FontFamily="{StaticResource DisplayFont}"
+                            PlaceholderText="Card title" Margin="0,0,0,14" />
+
+                <!-- Priority + due -->
+                <Grid Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Priority" Style="{StaticResource MetaText}" Margin="0,0,0,4" />
+                        <ComboBox ItemsSource="{Binding Priorities}" SelectedItem="{Binding Priority}"
+                                  HorizontalAlignment="Stretch" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Due date" Style="{StaticResource MetaText}" Margin="0,0,0,4" />
+                        <DatePicker SelectedDate="{Binding DueDate}" Width="150" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="4">
+                        <TextBlock Text="Time" Style="{StaticResource MetaText}" Margin="0,0,0,4" />
+                        <ui:TextBox Text="{Binding DueTime, UpdateSourceTrigger=PropertyChanged}"
+                                    Width="72" PlaceholderText="17:00" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Labels -->
+                <TextBlock Text="Labels" Style="{StaticResource MetaText}" Margin="0,0,0,6" />
+                <ItemsControl ItemsSource="{Binding Labels}" Margin="0,0,0,14">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:LabelToggle}">
+                            <CheckBox IsChecked="{Binding IsChecked}" Margin="0,0,12,4">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="8" Height="8" CornerRadius="4" Margin="0,0,6,0"
+                                            Background="{Binding Label.Color, Converter={StaticResource HexBrush}}" />
+                                    <TextBlock Text="{Binding Label.Name}" />
+                                </StackPanel>
+                            </CheckBox>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Description: edit / preview -->
+                <Grid Margin="0,0,0,6">
+                    <TextBlock Text="Description (Markdown)" Style="{StaticResource MetaText}" />
+                    <ui:Button HorizontalAlignment="Right" Appearance="Transparent" Padding="6,2"
+                               Content="Preview" Command="{Binding TogglePreviewCommand}" />
+                </Grid>
+
+                <ui:TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                            AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" MaxHeight="260"
+                            VerticalScrollBarVisibility="Auto"
+                            PlaceholderText="Supports **bold**, lists, `code`, links…"
+                            Margin="0,0,0,14"
+                            Visibility="{Binding IsPreviewingDescription, Converter={StaticResource NotBoolToVisibility}}" />
+
+                <Border BorderThickness="1" CornerRadius="6" Padding="12" MinHeight="120"
+                        Margin="0,0,0,14"
+                        BorderBrush="{DynamicResource CardStrokeBrush}"
+                        Background="{DynamicResource CardBackgroundBrush}"
+                        Visibility="{Binding IsPreviewingDescription, Converter={StaticResource BoolToVisibility}}">
+                    <FlowDocumentScrollViewer x:Name="DescriptionPreview"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled" />
+                </Border>
+
+                <!-- Checklist -->
+                <TextBlock Text="Checklist" Style="{StaticResource MetaText}" Margin="0,0,0,6" />
+                <ItemsControl ItemsSource="{Binding Checklist}" Margin="0,0,0,6">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:ChecklistDraft}">
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <CheckBox IsChecked="{Binding Done}" VerticalAlignment="Center" />
+                                <ui:TextBox Grid.Column="1" Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" />
+                                <ui:Button Grid.Column="2" Appearance="Transparent" Padding="6,2"
+                                           Icon="{ui:SymbolIcon Delete24}"
+                                           Command="{Binding DataContext.RemoveChecklistItemCommand,
+                                                     RelativeSource={RelativeSource AncestorType=Window}}"
+                                           CommandParameter="{Binding}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Grid Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBox x:Name="NewChecklistBox"
+                                Text="{Binding NewChecklistText, UpdateSourceTrigger=PropertyChanged}"
+                                PlaceholderText="Add an item, Enter to commit" />
+                    <ui:Button Grid.Column="1" Content="Add" Margin="6,0,0,0"
+                               Command="{Binding AddChecklistItemCommand}" />
+                </Grid>
+
+                <!-- Links -->
+                <TextBlock Text="Links and files" Style="{StaticResource MetaText}" Margin="0,0,0,6" />
+                <ItemsControl ItemsSource="{Binding Links}" Margin="0,0,0,6">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:LinkDraft}">
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:Button Appearance="Transparent" HorizontalContentAlignment="Left"
+                                           HorizontalAlignment="Stretch"
+                                           Content="{Binding Target}"
+                                           Command="{Binding DataContext.OpenLinkCommand,
+                                                     RelativeSource={RelativeSource AncestorType=Window}}"
+                                           CommandParameter="{Binding}" />
+                                <ui:Button Grid.Column="1" Appearance="Transparent" Padding="6,2"
+                                           Icon="{ui:SymbolIcon Delete24}"
+                                           Command="{Binding DataContext.RemoveLinkCommand,
+                                                     RelativeSource={RelativeSource AncestorType=Window}}"
+                                           CommandParameter="{Binding}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Grid Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBox Text="{Binding NewLinkTarget, UpdateSourceTrigger=PropertyChanged}"
+                                PlaceholderText="https://…  or  C:\path\to\file" />
+                    <ui:Button Grid.Column="1" Content="Add" Margin="6,0,0,0"
+                               Command="{Binding AddLinkCommand}" />
+                </Grid>
+
+                <!-- Activity -->
+                <TextBlock Text="Activity" Style="{StaticResource MetaText}" Margin="0,0,0,6" />
+                <ItemsControl ItemsSource="{Binding Activities}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type domain:Activity}">
+                            <Grid Margin="0,0,0,3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Style="{StaticResource MetaText}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           TextTrimming="CharacterEllipsis">
+                                    <TextBlock.Text>
+                                        <MultiBinding Converter="{StaticResource ActivityText}">
+                                            <Binding Path="Kind" />
+                                            <Binding Path="Detail" />
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                                <TextBlock Grid.Column="1" Style="{StaticResource MetaText}"
+                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                           Text="{Binding CreatedUtc, StringFormat=g, ConverterCulture={x:Null}}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Padding="20,10,20,16" BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource LaneStrokeBrush}">
+            <Grid>
+                <TextBlock Style="{StaticResource MetaText}"
+                           Foreground="{DynamicResource TextTertiaryBrush}"
+                           Text="Ctrl+Enter saves · Esc discards" VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <ui:Button Content="Discard" Appearance="Secondary" Margin="0,0,8,0"
+                               Click="OnDiscard" />
+                    <ui:Button Content="Save" Appearance="Primary" Command="{Binding SaveCommand}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

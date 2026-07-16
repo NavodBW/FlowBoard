@@ -1,0 +1,57 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        FlowBoard light tokens. Key set is identical to Tokens.Dark.xaml by contract.
+
+        The lane sits *darker* than the card here (the inverse of the dark theme, where the
+        lane is darker too): in both themes the card is the raised object and the lane is
+        the recess it sits in. Depth reads the same way in both, which is why cards don't
+        feel like they invert their meaning when the system theme flips at sunset.
+    -->
+
+    <Color x:Key="LaneBackgroundColor">#ECEEF2</Color>
+    <Color x:Key="LaneStrokeColor">#DDE1E8</Color>
+    <Color x:Key="CardBackgroundColor">#FFFFFF</Color>
+    <Color x:Key="CardHoverColor">#F7F9FC</Color>
+    <Color x:Key="CardStrokeColor">#DFE3EA</Color>
+    <Color x:Key="CardSelectedStrokeColor">#2F6FE0</Color>
+
+    <Color x:Key="TextPrimaryColor">#1A1F29</Color>
+    <Color x:Key="TextSecondaryColor">#5A6474</Color>
+    <Color x:Key="TextTertiaryColor">#8A94A6</Color>
+
+    <!-- Same ramp, darkened for contrast against white cards. -->
+    <Color x:Key="PriorityLowColor">#5A7590</Color>
+    <Color x:Key="PriorityMediumColor">#4650BE</Color>
+    <Color x:Key="PriorityHighColor">#8C3FAE</Color>
+    <Color x:Key="PriorityCriticalColor">#C21957</Color>
+
+    <Color x:Key="DueSoonColor">#B77315</Color>
+    <Color x:Key="DueOverdueColor">#C62A2F</Color>
+
+    <SolidColorBrush x:Key="LaneBackgroundBrush" Color="{StaticResource LaneBackgroundColor}" />
+    <SolidColorBrush x:Key="LaneStrokeBrush" Color="{StaticResource LaneStrokeColor}" />
+    <SolidColorBrush x:Key="CardBackgroundBrush" Color="{StaticResource CardBackgroundColor}" />
+    <SolidColorBrush x:Key="CardHoverBrush" Color="{StaticResource CardHoverColor}" />
+    <SolidColorBrush x:Key="CardStrokeBrush" Color="{StaticResource CardStrokeColor}" />
+    <SolidColorBrush x:Key="CardSelectedStrokeBrush" Color="{StaticResource CardSelectedStrokeColor}" />
+
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimaryColor}" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondaryColor}" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="{StaticResource TextTertiaryColor}" />
+
+    <SolidColorBrush x:Key="PriorityLowBrush" Color="{StaticResource PriorityLowColor}" />
+    <SolidColorBrush x:Key="PriorityMediumBrush" Color="{StaticResource PriorityMediumColor}" />
+    <SolidColorBrush x:Key="PriorityHighBrush" Color="{StaticResource PriorityHighColor}" />
+    <SolidColorBrush x:Key="PriorityCriticalBrush" Color="{StaticResource PriorityCriticalColor}" />
+
+    <SolidColorBrush x:Key="DueSoonBrush" Color="{StaticResource DueSoonColor}" />
+    <SolidColorBrush x:Key="DueOverdueBrush" Color="{StaticResource DueOverdueColor}" />
+
+    <DropShadowEffect x:Key="CardShadow" BlurRadius="10" ShadowDepth="1"
+                      Direction="270" Opacity="0.12" Color="#0B1220" />
+    <DropShadowEffect x:Key="CardDragShadow" BlurRadius="24" ShadowDepth="6"
+                      Direction="270" Opacity="0.22" Color="#0B1220" />
+
+</ResourceDictionary>

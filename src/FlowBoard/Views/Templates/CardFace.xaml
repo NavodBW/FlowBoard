@@ -1,0 +1,236 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+                    xmlns:local="clr-namespace:FlowBoard.Views"
+                    xmlns:domain="clr-namespace:FlowBoard.Domain"
+                    xmlns:services="clr-namespace:FlowBoard.Services"
+                    xmlns:dd="clr-namespace:FlowBoard.Views.DragDrop">
+
+    <local:PriorityStripHeightConverter x:Key="StripHeight" />
+    <local:DueStateConverter x:Key="DueState" />
+    <local:DueTextConverter x:Key="DueText" />
+    <local:ChecklistTextConverter x:Key="ChecklistText" />
+    <local:AgingStateConverter x:Key="AgingState" />
+    <local:LabelLookupConverter x:Key="LabelLookup" />
+    <local:HexToBrushConverter x:Key="HexBrush" />
+    <local:CountToVisibilityConverter x:Key="CountToVisibility" />
+    <local:NullToVisibilityConverter x:Key="NullToVisibility" />
+    <local:CardMatchConverter x:Key="CardMatch" />
+    <local:BoardIsSelectedConverter x:Key="IsSelected" />
+
+    <!-- Label chip. Colour is user data, so the chip is a tinted rule + text rather than
+         a filled block: a board of filled chips in arbitrary user hues turns into confetti
+         and stops being scannable. -->
+    <DataTemplate x:Key="LabelChipTemplate" DataType="{x:Type domain:Label}">
+        <Border Margin="0,0,4,0" Padding="5,1,6,2"
+                CornerRadius="{StaticResource ChipRadius}"
+                Background="{DynamicResource LaneBackgroundBrush}"
+                BorderThickness="0,0,0,2"
+                BorderBrush="{Binding Color, Converter={StaticResource HexBrush}}">
+            <TextBlock Text="{Binding Name}"
+                       FontFamily="{StaticResource BodyFont}"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
+        </Border>
+    </DataTemplate>
+
+    <!-- The due pill. One element, one job: when. -->
+    <Style x:Key="DuePillStyle" TargetType="TextBlock" BasedOn="{StaticResource MetaText}">
+        <Setter Property="Margin" Value="0,0,10,0" />
+        <Style.Triggers>
+            <!-- DataTrigger.Binding takes a MultiBinding, which lets state come from a
+                 converter while the brush stays a DynamicResource — so these re-resolve
+                 when the system theme flips instead of freezing at first render. -->
+            <DataTrigger Value="Soon">
+                <DataTrigger.Binding>
+                    <MultiBinding Converter="{StaticResource DueState}">
+                        <Binding Path="DueUtc" />
+                        <Binding Path="Now" Source="{x:Static services:Clock.Instance}" />
+                    </MultiBinding>
+                </DataTrigger.Binding>
+                <Setter Property="Foreground" Value="{DynamicResource DueSoonBrush}" />
+                <Setter Property="FontWeight" Value="Bold" />
+            </DataTrigger>
+            <DataTrigger Value="Overdue">
+                <DataTrigger.Binding>
+                    <MultiBinding Converter="{StaticResource DueState}">
+                        <Binding Path="DueUtc" />
+                        <Binding Path="Now" Source="{x:Static services:Clock.Instance}" />
+                    </MultiBinding>
+                </DataTrigger.Binding>
+                <Setter Property="Foreground" Value="{DynamicResource DueOverdueBrush}" />
+                <Setter Property="FontWeight" Value="Bold" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- The priority strip: the signature element.
+         Level reads by LENGTH first (None draws nothing, Critical fills the edge) and by
+         colour second. Length survives colour-blindness and peripheral vision, which is
+         the condition you actually scan a lane under. -->
+    <Style x:Key="PriorityStripStyle" TargetType="Border">
+        <Setter Property="Visibility" Value="Collapsed" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Priority}" Value="{x:Static domain:Priority.Low}">
+                <Setter Property="Visibility" Value="Visible" />
+                <Setter Property="Background" Value="{DynamicResource PriorityLowBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Priority}" Value="{x:Static domain:Priority.Medium}">
+                <Setter Property="Visibility" Value="Visible" />
+                <Setter Property="Background" Value="{DynamicResource PriorityMediumBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Priority}" Value="{x:Static domain:Priority.High}">
+                <Setter Property="Visibility" Value="Visible" />
+                <Setter Property="Background" Value="{DynamicResource PriorityHighBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Priority}" Value="{x:Static domain:Priority.Critical}">
+                <Setter Property="Visibility" Value="Visible" />
+                <Setter Property="Background" Value="{DynamicResource PriorityCriticalBrush}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="CardRootStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource CardRadius}" />
+        <Setter Property="Effect" Value="{DynamicResource CardShadow}" />
+        <Setter Property="Margin" Value="0,0,0,8" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource CardHoverBrush}" />
+            </Trigger>
+
+            <!-- Filtered out: dimmed, never hidden. The board must keep its shape so you
+                 can still see *where* a match lives, which is usually the actual question
+                 behind a search. -->
+            <DataTrigger Value="False">
+                <DataTrigger.Binding>
+                    <MultiBinding Converter="{StaticResource CardMatch}">
+                        <Binding />
+                        <Binding Path="DataContext.Filter" RelativeSource="{RelativeSource AncestorType=Window}" />
+                        <Binding Path="Now" Source="{x:Static services:Clock.Instance}" />
+                        <Binding Path="DataContext.Filter.Text" RelativeSource="{RelativeSource AncestorType=Window}" />
+                        <Binding Path="DataContext.Filter.LabelId" RelativeSource="{RelativeSource AncestorType=Window}" />
+                        <Binding Path="DataContext.Filter.Priority" RelativeSource="{RelativeSource AncestorType=Window}" />
+                        <Binding Path="DataContext.Filter.Due" RelativeSource="{RelativeSource AncestorType=Window}" />
+                        <Binding Path="Title" />
+                        <Binding Path="Priority" />
+                        <Binding Path="DueUtc" />
+                    </MultiBinding>
+                </DataTrigger.Binding>
+                <Setter Property="Opacity" Value="0.22" />
+            </DataTrigger>
+
+            <!-- Selection: the accent ring, not a fill. A filled selection fights the
+                 priority strip and the label chips for the same attention. -->
+            <DataTrigger Value="True">
+                <DataTrigger.Binding>
+                    <MultiBinding Converter="{StaticResource IsSelected}">
+                        <Binding />
+                        <Binding Path="DataContext.SelectedCard" RelativeSource="{RelativeSource AncestorType=Window}" />
+                    </MultiBinding>
+                </DataTrigger.Binding>
+                <Setter Property="BorderBrush" Value="{DynamicResource CardSelectedStrokeBrush}" />
+                <Setter Property="BorderThickness" Value="1.5" />
+            </DataTrigger>
+
+            <!-- Ageing: untouched 14+ days and the toggle is on. Reduced opacity, not a
+                 grey wash — the card recedes without any of its information being lost,
+                 and it snaps back the moment you touch it. -->
+            <DataTrigger Value="True">
+                <DataTrigger.Binding>
+                    <MultiBinding Converter="{StaticResource AgingState}"
+                                  ConverterParameter="14">
+                        <Binding Path="TouchedUtc" />
+                        <Binding Path="Now" Source="{x:Static services:Clock.Instance}" />
+                        <Binding Path="DataContext.Settings.CardAgingEnabled"
+                                 RelativeSource="{RelativeSource AncestorType=Window}" />
+                    </MultiBinding>
+                </DataTrigger.Binding>
+                <Setter Property="Opacity" Value="0.5" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ===================== the card face ===================== -->
+    <DataTemplate x:Key="CardFaceTemplate" DataType="{x:Type domain:Card}">
+        <Border Style="{StaticResource CardRootStyle}" dd:Drag.CardSource="True">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Strip host stretches the full card height; the strip fills a fraction
+                     of it, anchored top. -->
+                <Border x:Name="StripHost" Grid.Column="0"
+                        Width="{StaticResource PriorityStripWidth}"
+                        Margin="5,6,0,6" VerticalAlignment="Stretch">
+                    <Border Style="{StaticResource PriorityStripStyle}"
+                            VerticalAlignment="Top"
+                            CornerRadius="2"
+                            Width="{StaticResource PriorityStripWidth}">
+                        <Border.Height>
+                            <MultiBinding Converter="{StaticResource StripHeight}">
+                                <Binding Path="ActualHeight" ElementName="StripHost" />
+                                <Binding Path="Priority" />
+                            </MultiBinding>
+                        </Border.Height>
+                    </Border>
+                </Border>
+
+                <StackPanel Grid.Column="1" Margin="{StaticResource CardContentPadding}">
+                    <TextBlock Text="{Binding Title}" Style="{StaticResource CardTitleText}"
+                               Margin="0,0,10,0" />
+
+                    <!-- Labels. Empty collection renders nothing and costs no height. -->
+                    <ItemsControl Margin="0,6,0,0"
+                                  ItemTemplate="{StaticResource LabelChipTemplate}">
+                        <ItemsControl.ItemsSource>
+                            <MultiBinding Converter="{StaticResource LabelLookup}">
+                                <Binding Path="LabelIds" />
+                                <Binding Path="DataContext.Model.Labels"
+                                         RelativeSource="{RelativeSource AncestorType=Window}" />
+                            </MultiBinding>
+                        </ItemsControl.ItemsSource>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <!-- Meta row: due, checklist, links. All three hide when empty, so a
+                         bare card stays a single line of title. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
+                        <TextBlock Style="{StaticResource DuePillStyle}"
+                                   Visibility="{Binding DueUtc, Converter={StaticResource NullToVisibility}}">
+                            <TextBlock.Text>
+                                <MultiBinding Converter="{StaticResource DueText}">
+                                    <Binding Path="DueUtc" />
+                                    <Binding Path="Now" Source="{x:Static services:Clock.Instance}" />
+                                </MultiBinding>
+                            </TextBlock.Text>
+                        </TextBlock>
+
+                        <TextBlock Style="{StaticResource MetaText}" Margin="0,0,10,0"
+                                   Visibility="{Binding ChecklistTotal, Converter={StaticResource CountToVisibility}}">
+                            <TextBlock.Text>
+                                <MultiBinding Converter="{StaticResource ChecklistText}">
+                                    <Binding Path="ChecklistDone" />
+                                    <Binding Path="ChecklistTotal" />
+                                </MultiBinding>
+                            </TextBlock.Text>
+                        </TextBlock>
+
+                        <TextBlock Style="{StaticResource MetaText}"
+                                   Text="{Binding Links.Count, StringFormat={}{0} link(s)}"
+                                   Visibility="{Binding Links.Count, Converter={StaticResource CountToVisibility}}" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </DataTemplate>
+
+</ResourceDictionary>

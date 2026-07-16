@@ -1,0 +1,67 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!--
+        Three roles, three faces, all shipped with Windows 10/11:
+          Display  — Segoe UI Variable Display: card and lane titles. Optical sizing means
+                     it's cut for larger text; it holds up at SemiBold where Text muddies.
+          Text     — Segoe UI Variable Text: descriptions, menus, everything prose.
+          Utility  — Cascadia Mono: due dates and the checklist counter. Tabular figures,
+                     so "3/7" -> "10/12" doesn't shift the row, and data reads as data.
+        Fallbacks are listed for Windows 10 builds without the Variable family.
+    -->
+    <FontFamily x:Key="DisplayFont">Segoe UI Variable Display, Segoe UI Semibold, Segoe UI</FontFamily>
+    <FontFamily x:Key="BodyFont">Segoe UI Variable Text, Segoe UI</FontFamily>
+    <FontFamily x:Key="UtilityFont">Cascadia Mono, Consolas, Courier New</FontFamily>
+
+    <!-- Type scale. Deliberately short: five sizes is a scale, ten is a mess. -->
+    <sys:Double x:Key="FontSizeCaption">11</sys:Double>
+    <sys:Double x:Key="FontSizeBody">13</sys:Double>
+    <sys:Double x:Key="FontSizeCardTitle">14</sys:Double>
+    <sys:Double x:Key="FontSizeLaneTitle">14</sys:Double>
+    <sys:Double x:Key="FontSizeTitle">20</sys:Double>
+
+    <!-- Layout. A 4px base unit; every margin below is a multiple of it. -->
+    <sys:Double x:Key="LaneWidth">304</sys:Double>
+    <sys:Double x:Key="LaneGap">12</sys:Double>
+    <CornerRadius x:Key="CardRadius">8</CornerRadius>
+    <CornerRadius x:Key="LaneRadius">10</CornerRadius>
+    <CornerRadius x:Key="ChipRadius">4</CornerRadius>
+    <Thickness x:Key="CardPadding">0,0,12,0</Thickness>
+    <Thickness x:Key="CardContentPadding">10,9,0,9</Thickness>
+    <Thickness x:Key="LanePadding">8</Thickness>
+
+    <!-- The strip is the signature; 4px is enough to read and narrow enough to ignore. -->
+    <sys:Double x:Key="PriorityStripWidth">4</sys:Double>
+
+    <!-- Cards untouched this long desaturate, when the ageing toggle is on. -->
+    <sys:Double x:Key="AgingThresholdDays">14</sys:Double>
+
+    <Style x:Key="CardTitleText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource DisplayFont}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCardTitle}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="MaxHeight" Value="60" />
+        <Setter Property="LineHeight" Value="19" />
+    </Style>
+
+    <Style x:Key="LaneTitleText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource DisplayFont}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeLaneTitle}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="MetaText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource UtilityFont}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+</ResourceDictionary>

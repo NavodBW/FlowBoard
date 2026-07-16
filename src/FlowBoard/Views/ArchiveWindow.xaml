@@ -1,0 +1,68 @@
+<ui:FluentWindow x:Class="FlowBoard.Views.ArchiveWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:domain="clr-namespace:FlowBoard.Domain"
+        Title="Archive"
+        Width="640" Height="600"
+        WindowBackdropType="Mica"
+        ExtendsContentIntoTitleBar="True"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Archive" />
+
+        <Grid Grid.Row="1" Margin="20,4,20,16">
+            <TextBlock x:Name="EmptyState"
+                       Text="Nothing archived. Cards you archive land here, and can be restored."
+                       TextWrapping="Wrap" VerticalAlignment="Center" HorizontalAlignment="Center"
+                       MaxWidth="320" TextAlignment="Center"
+                       FontFamily="{StaticResource BodyFont}"
+                       Foreground="{DynamicResource TextTertiaryBrush}" />
+
+            <ItemsControl x:Name="Items">
+                <ItemsControl.Template>
+                    <ControlTemplate TargetType="ItemsControl">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsPresenter />
+                        </ScrollViewer>
+                    </ControlTemplate>
+                </ItemsControl.Template>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type domain:Card}">
+                        <Border Margin="0,0,0,8" CornerRadius="{StaticResource CardRadius}"
+                                Padding="12,10"
+                                Background="{DynamicResource CardBackgroundBrush}"
+                                BorderBrush="{DynamicResource CardStrokeBrush}"
+                                BorderThickness="1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Title}" Style="{StaticResource CardTitleText}" />
+                                    <TextBlock Style="{StaticResource MetaText}" Margin="0,4,0,0"
+                                               Foreground="{DynamicResource TextTertiaryBrush}"
+                                               Text="{Binding ModifiedUtc, StringFormat=archived {0:g}}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:Button Content="Restore" Appearance="Secondary" Margin="0,0,8,0"
+                                               Click="OnRestore" Tag="{Binding}" />
+                                    <ui:Button Content="Delete" Appearance="Danger"
+                                               Click="OnPurge" Tag="{Binding}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>
