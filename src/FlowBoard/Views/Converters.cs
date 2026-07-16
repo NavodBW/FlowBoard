@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Globalization;
+using System.Linq;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -281,5 +282,108 @@ public sealed class EqualityToVisibilityConverter : IMultiValueConverter
     }
 
     public object[] ConvertBack(object value, Type[] t, object? p, CultureInfo c) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>
+/// Board accent -> a translucent wash for the whole lane.
+///
+/// Returns the accent at low alpha rather than a pre-blended opaque colour, so it can be
+/// layered over a Border that keeps its DynamicResource theme background. Alpha compositing
+/// then happens at render time, which means the wash still looks right after a light/dark
+/// swap. A pre-blended colour would be computed once against whichever theme happened to be
+/// loaded and then quietly rot.
+/// </summary>
+public sealed class AccentWashConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is not string hex || string.IsNullOrWhiteSpace(hex)) return Brushes.Transparent;
+
+        var alpha = 30.0;
+        if (parameter is string p && double.TryParse(p, NumberStyles.Any, CultureInfo.InvariantCulture, out var a))
+            alpha = a;
+
+        try
+        {
+            var color = (Color)ColorConverter.ConvertFromString(hex);
+            var brush = new SolidColorBrush(Color.FromArgb((byte)Math.Clamp(alpha, 0, 255), color.R, color.G, color.B));
+            brush.Freeze();
+            return brush;
+        }
+        catch (FormatException)
+        {
+            return Brushes.Transparent;
+        }
+    }
+
+    public object ConvertBack(object? value, Type t, object? p, CultureInfo c) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>Packs (Board, hex) into one CommandParameter. XAML can only pass a single
+/// parameter, and recolouring needs to know both which board and which colour.</summary>
+public sealed class AccentArgsConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
+        => new AccentArgs(values.ElementAtOrDefault(0) as Board, values.ElementAtOrDefault(1) as string);
+
+    public object[] ConvertBack(object value, Type[] t, object? p, CultureInfo c) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>
+/// The depth wash: a card's tint strengthens toward the top of its lane.
+///
+/// Inputs are (position, lane count, board accent). The ramp is eased rather than linear —
+/// a linear fade spends most of its range in the middle greys where no one can see a
+/// difference, while an eased one keeps the top two or three cards visibly distinct, which
+/// is the whole point. A lane of one gets the full strength: it *is* the top card.
+///
+/// Returns the accent at varying alpha rather than a blended colour, so it composites over
+/// whatever the theme's card background happens to be and survives a light/dark switch.
+/// </summary>
+public sealed class CardDepthWashConverter : IMultiValueConverter
+{
+    private const double TopAlpha = 46;
+    private const double BottomAlpha = 5;
+
+    public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (values.Length < 3) return Brushes.Transparent;
+        if (values[0] is not int position) return Brushes.Transparent;
+        if (values[1] is not int count) return Brushes.Transparent;
+        if (values[2] is not string hex || string.IsNullOrWhiteSpace(hex)) return Brushes.Transparent;
+
+        var t = count <= 1 ? 0 : Math.Clamp(position / (double)(count - 1), 0, 1);
+
+        // Ease-out: fall away fast from the top, then flatten.
+        var eased = 1 - Math.Pow(1 - t, 2);
+        var alpha = TopAlpha + (BottomAlpha - TopAlpha) * eased;
+
+        try
+        {
+            var c = (Color)ColorConverter.ConvertFromString(hex);
+            var brush = new SolidColorBrush(Color.FromArgb((byte)Math.Clamp(alpha, 0, 255), c.R, c.G, c.B));
+            brush.Freeze();
+            return brush;
+        }
+        catch (FormatException)
+        {
+            return Brushes.Transparent;
+        }
+    }
+
+    public object[] ConvertBack(object value, Type[] t, object? p, CultureInfo c) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>Enum == parameter. Drives radio-style menu checkmarks.</summary>
+public sealed class EnumEqualsConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is not null && value.Equals(parameter);
+
+    public object ConvertBack(object? value, Type t, object? p, CultureInfo c) =>
         throw new NotSupportedException();
 }

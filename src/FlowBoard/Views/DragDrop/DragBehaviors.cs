@@ -79,9 +79,13 @@ public static class Drag
         fe.PreviewMouseLeftButtonUp += (_, args) => GetController(fe)?.NoteRelease();
     }
 
+    /// <summary>Did the press land on something that wants the click itself?
+    /// Walks via TreeWalk, because OriginalSource is a Run whenever the press lands on
+    /// text, and VisualTreeHelper.GetParent throws on ContentElements rather than
+    /// returning null.</summary>
     private static bool IsInteractive(DependencyObject o)
     {
-        for (var node = o; node is not null; node = VisualTreeHelper.GetParent(node))
+        for (var node = o; node is not null; node = TreeWalk.ParentOf(node))
         {
             if (node is ButtonBase or TextBoxBase or Thumb) return true;
             if (node is ItemsControl) return false;
@@ -93,7 +97,7 @@ public static class Drag
     /// grabbed by its header but the whole lane is what lifts.</summary>
     private static FrameworkElement? FindLaneRoot(DependencyObject from)
     {
-        for (var node = from; node is not null; node = VisualTreeHelper.GetParent(node))
+        for (var node = from; node is not null; node = TreeWalk.ParentOf(node))
             if (node is FrameworkElement fe && GetLaneRoot(fe))
                 return fe;
         return null;
@@ -175,6 +179,23 @@ public static class Drag
 
         fe.Loaded += Register;
         fe.DataContextChanged += (_, _) => Register(null, EventArgs.Empty);
+        fe.Unloaded += (_, _) => GetController(fe)?.Unregister(fe);
+    }
+
+    // ---------------------------------------------------------------- archive target
+
+    public static readonly DependencyProperty ArchiveZoneProperty =
+        DependencyProperty.RegisterAttached("ArchiveZone", typeof(bool), typeof(Drag),
+            new PropertyMetadata(false, OnArchiveZoneChanged));
+
+    public static bool GetArchiveZone(DependencyObject d) => (bool)d.GetValue(ArchiveZoneProperty);
+    public static void SetArchiveZone(DependencyObject d, bool v) => d.SetValue(ArchiveZoneProperty, v);
+
+    private static void OnArchiveZoneChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not FrameworkElement fe || !(bool)e.NewValue) return;
+
+        fe.Loaded += (_, _) => GetController(fe)?.RegisterArchiveZone(fe);
         fe.Unloaded += (_, _) => GetController(fe)?.Unregister(fe);
     }
 

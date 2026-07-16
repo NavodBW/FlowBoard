@@ -219,3 +219,207 @@ public sealed class PurgeCardOp(string cardId) : IOp
     public void Revert(OpContext ctx) =>
         throw new NotSupportedException("Permanent deletion cannot be undone.");
 }
+
+// ---------------------------------------------------------------- labels
+
+public sealed class AddLabelOp(Label label) : IOp
+{
+    public string Label => "Add label";
+
+    public void Apply(OpContext ctx)
+    {
+        label.Position = ctx.Model.Labels.Count;
+        ctx.Model.Labels.Add(label);
+        ctx.Store.InTransaction(tx => ctx.Store.Upsert(tx, label));
+    }
+
+    public void Revert(OpContext ctx)
+    {
+        ctx.Model.Labels.Remove(label);
+        ctx.Store.InTransaction(tx => ctx.Store.Delete(tx, "labels", label.Id));
+    }
+}
+
+/// <summary>Rename or recolour a label. Merges per label + field so dragging a colour or
+/// typing a name is one undo step.</summary>
+public sealed class EditLabelOp : IOp
+{
+    private readonly string _labelId;
+    private readonly string _field;
+    private readonly Action<Domain.Label> _apply;
+    private readonly Action<Domain.Label> _revert;
+
+    public string Label { get; }
+
+    private EditLabelOp(string labelId, string field, string label,
+                        Action<Domain.Label> apply, Action<Domain.Label> revert)
+        => (_labelId, _field, Label, _apply, _revert) = (labelId, field, label, apply, revert);
+
+    public static EditLabelOp Set<T>(Domain.Label label, string field, string description,
+                                     Func<Domain.Label, T> get, Action<Domain.Label, T> set, T value)
+    {
+        var old = get(label);
+        return new EditLabelOp(label.Id, field, description, l => set(l, value), l => set(l, old));
+    }
+
+    public void Apply(OpContext ctx) => Run(ctx, _apply);
+    public void Revert(OpContext ctx) => Run(ctx, _revert);
+
+    private void Run(OpContext ctx, Action<Domain.Label> mutate)
+    {
+        var label = ctx.Model.Labels.FirstOrDefault(l => l.Id == _labelId);
+        if (label is null) return;
+
+        mutate(label);
+        label.Touch();
+        ctx.Store.InTransaction(tx => ctx.Store.Upsert(tx, label));
+    }
+
+    public bool TryMerge(IOp next) => next is EditLabelOp e && e._labelId == _labelId && e._field == _field;
+}
+
+/// <summary>
+/// Delete a label everywhere.
+///
+/// A label isn't only a row in `labels` — it's also every card that wears it. ON DELETE
+/// CASCADE takes care of the card_labels rows in SQLite, but the in-memory cards would keep
+/// a dangling id and the label chip would vanish with no way back. So we record exactly
+/// which cards had it, and undo restores both the label and its wearers.
+/// </summary>
+public sealed class DeleteLabelOp(string labelId) : IOp
+{
+    private Domain.Label? _removed;
+    private int _index;
+    private List<string> _wornBy = new();
+
+    public string Label => "Delete label";
+
+    public void Apply(OpContext ctx)
+    {
+        _removed = ctx.Model.Labels.FirstOrDefault(l => l.Id == labelId);
+        if (_removed is null) return;
+
+        _index = ctx.Model.Labels.IndexOf(_removed);
+        _wornBy = ctx.Model.CardsById.Values.Where(c => c.LabelIds.Contains(labelId))
+                                            .Select(c => c.Id).ToList();
+
+        foreach (var id in _wornBy) ctx.Model.CardsById[id].LabelIds.Remove(labelId);
+        ctx.Model.Labels.Remove(_removed);
+
+        ctx.Store.InTransaction(tx =>
+        {
+            foreach (var id in _wornBy) ctx.Store.SetCardLabels(tx, ctx.Model.CardsById[id]);
+            ctx.Store.Delete(tx, "labels", labelId);
+        });
+    }
+
+    public void Revert(OpContext ctx)
+    {
+        if (_removed is null) return;
+
+        ctx.Model.Labels.Insert(Math.Clamp(_index, 0, ctx.Model.Labels.Count), _removed);
+        foreach (var id in _wornBy)
+            if (ctx.Model.CardsById.TryGetValue(id, out var card) && !card.LabelIds.Contains(labelId))
+                card.LabelIds.Add(labelId);
+
+        ctx.Store.InTransaction(tx =>
+        {
+            ctx.Store.Upsert(tx, _removed);
+            foreach (var id in _wornBy) ctx.Store.SetCardLabels(tx, ctx.Model.CardsById[id]);
+        });
+    }
+}
+
+// ---------------------------------------------------------------- workspaces
+
+public sealed class AddWorkspaceOp(Workspace workspace) : IOp
+{
+    public string Label => "Add workspace";
+
+    public void Apply(OpContext ctx)
+    {
+        workspace.Position = ctx.Model.Workspaces.Count;
+        ctx.Model.Workspaces.Add(workspace);
+        ctx.Model.Index(workspace);
+
+        ctx.Store.InTransaction(tx =>
+        {
+            ctx.Store.Upsert(tx, workspace);
+            foreach (var b in workspace.Boards) ctx.Store.Upsert(tx, b);
+        });
+    }
+
+    public void Revert(OpContext ctx)
+    {
+        ctx.Model.Workspaces.Remove(workspace);
+        ctx.Model.WorkspacesById.Remove(workspace.Id);
+        foreach (var b in workspace.Boards) ctx.Model.BoardsById.Remove(b.Id);
+
+        ctx.Store.InTransaction(tx => ctx.Store.Delete(tx, "workspaces", workspace.Id));
+    }
+}
+
+public sealed class EditWorkspaceOp : IOp
+{
+    private readonly string _wsId;
+    private readonly string _field;
+    private readonly Action<Workspace> _apply;
+    private readonly Action<Workspace> _revert;
+
+    public string Label { get; }
+
+    private EditWorkspaceOp(string wsId, string field, string label,
+                            Action<Workspace> apply, Action<Workspace> revert)
+        => (_wsId, _field, Label, _apply, _revert) = (wsId, field, label, apply, revert);
+
+    public static EditWorkspaceOp Set<T>(Workspace ws, string field, string label,
+                                         Func<Workspace, T> get, Action<Workspace, T> set, T value)
+    {
+        var old = get(ws);
+        return new EditWorkspaceOp(ws.Id, field, label, w => set(w, value), w => set(w, old));
+    }
+
+    public void Apply(OpContext ctx) => Run(ctx, _apply);
+    public void Revert(OpContext ctx) => Run(ctx, _revert);
+
+    private void Run(OpContext ctx, Action<Workspace> mutate)
+    {
+        if (!ctx.Model.WorkspacesById.TryGetValue(_wsId, out var ws)) return;
+
+        mutate(ws);
+        ws.Touch();
+        ctx.Store.InTransaction(tx => ctx.Store.Upsert(tx, ws));
+    }
+
+    public bool TryMerge(IOp next) => next is EditWorkspaceOp e && e._wsId == _wsId && e._field == _field;
+}
+
+/// <summary>
+/// Archive a whole workspace — boards, cards and all.
+///
+/// Soft, like every other delete in the app: the rows stay, the flag flips, and Ctrl+Z puts
+/// the entire tree back exactly where it was. Removing it from the Workspaces collection is
+/// what makes it vanish from the sidebar; the flag is what keeps it out on the next load.
+/// </summary>
+public sealed class ArchiveWorkspaceOp(string workspaceId, bool archived) : IOp
+{
+    private int _index;
+
+    public string Label => archived ? "Delete workspace" : "Restore workspace";
+
+    public void Apply(OpContext ctx)
+    {
+        var ws = ctx.Model.WorkspacesById[workspaceId];
+        _index = ctx.Model.Workspaces.IndexOf(ws);
+
+        ws.Archived = archived;
+        ws.Touch();
+
+        if (archived) ctx.Model.Workspaces.Remove(ws);
+        else ctx.Model.Workspaces.Insert(Math.Clamp(_index < 0 ? ws.Position : _index, 0, ctx.Model.Workspaces.Count), ws);
+
+        ctx.Store.InTransaction(tx => ctx.Store.Upsert(tx, ws));
+    }
+
+    public void Revert(OpContext ctx) => new ArchiveWorkspaceOp(workspaceId, !archived).Apply(ctx);
+}

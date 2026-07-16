@@ -5,6 +5,7 @@
         Title="Keyboard shortcuts"
         Width="460" Height="520"
         ResizeMode="NoResize"
+        Icon="pack://application:,,,/Assets/FlowBoard.ico"
         WindowBackdropType="Mica"
         ExtendsContentIntoTitleBar="True"
         WindowStartupLocation="CenterOwner"

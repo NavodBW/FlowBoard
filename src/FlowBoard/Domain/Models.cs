@@ -65,6 +65,12 @@ public partial class Card : Entity
     [ObservableProperty] private string _title = "";
     [ObservableProperty] private string _description = "";
     [ObservableProperty] private Priority _priority = Priority.None;
+
+    /// <summary>When work is meant to begin. Distinct from CreatedUtc (when the card was
+    /// written down) — you can add a card in January for work that starts in March.</summary>
+    [ObservableProperty] private DateTime? _startUtc;
+
+    /// <summary>When work is due. The "end date" in sorting.</summary>
     [ObservableProperty] private DateTime? _dueUtc;
     [ObservableProperty] private int _position;
     [ObservableProperty] private bool _archived;

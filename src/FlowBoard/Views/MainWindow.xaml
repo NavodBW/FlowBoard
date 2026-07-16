@@ -10,6 +10,7 @@
         Title="FlowBoard"
         Width="1360" Height="820"
         MinWidth="1024" MinHeight="640"
+        Icon="pack://application:,,,/Assets/FlowBoard.ico"
         WindowBackdropType="Mica"
         ExtendsContentIntoTitleBar="True"
         WindowStartupLocation="CenterScreen"
@@ -19,6 +20,9 @@
         <local:HexToBrushConverter x:Key="HexBrush" />
         <local:BoardIsSelectedConverter x:Key="IsSelected" />
         <local:EqualityToVisibilityConverter x:Key="IsSelectedVisibility" />
+        <local:AccentWashConverter x:Key="AccentWash" />
+        <local:AccentArgsConverter x:Key="AccentArgs" />
+        <local:EnumEqualsConverter x:Key="EnumEquals" />
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         <local:InverseBooleanToVisibilityConverter x:Key="NotBoolToVisibility" />
     </Window.Resources>
@@ -44,23 +48,39 @@
                         <Separator />
                         <MenuItem Header="_Archive…" InputGestureText="Ctrl+Shift+A"
                                   Command="{Binding ShowArchiveCommand}" />
+                        <MenuItem Header="_Labels…" Command="{Binding ShowLabelsCommand}" />
                     </MenuItem>
                     <MenuItem Header="_View">
+                        <!-- IsCheckable is what actually draws the tick. Without it, IsChecked
+                             is set and silently invisible — which is why these read as dead
+                             toggles with no way to tell their state. -->
                         <MenuItem Header="_Collapse sidebar" InputGestureText="Ctrl+B"
+                                  IsCheckable="True"
                                   Command="{Binding ToggleSidebarCommand}"
                                   IsChecked="{Binding Settings.SidebarCollapsed, Mode=OneWay}" />
-                        <MenuItem Header="Card _ageing" Command="{Binding ToggleAgingCommand}"
+                        <MenuItem Header="Card _ageing" ToolTip="Fade cards that haven't been touched in a while"
+                                  IsCheckable="True"
+                                  Command="{Binding ToggleAgingCommand}"
                                   IsChecked="{Binding Settings.CardAgingEnabled, Mode=OneWay}" />
                         <Separator />
-                        <MenuItem Header="Theme: follow _Windows"
+                        <MenuItem Header="Theme: follow _Windows" IsCheckable="True"
                                   Command="{Binding SetThemeCommand}"
-                                  CommandParameter="{x:Static services:ThemePreference.System}" />
-                        <MenuItem Header="Theme: _light"
+                                  CommandParameter="{x:Static services:ThemePreference.System}"
+                                  IsChecked="{Binding Settings.Theme, Mode=OneWay,
+                                              Converter={StaticResource EnumEquals},
+                                              ConverterParameter={x:Static services:ThemePreference.System}}" />
+                        <MenuItem Header="Theme: _light" IsCheckable="True"
                                   Command="{Binding SetThemeCommand}"
-                                  CommandParameter="{x:Static services:ThemePreference.Light}" />
-                        <MenuItem Header="Theme: _dark"
+                                  CommandParameter="{x:Static services:ThemePreference.Light}"
+                                  IsChecked="{Binding Settings.Theme, Mode=OneWay,
+                                              Converter={StaticResource EnumEquals},
+                                              ConverterParameter={x:Static services:ThemePreference.Light}}" />
+                        <MenuItem Header="Theme: _dark" IsCheckable="True"
                                   Command="{Binding SetThemeCommand}"
-                                  CommandParameter="{x:Static services:ThemePreference.Dark}" />
+                                  CommandParameter="{x:Static services:ThemePreference.Dark}"
+                                  IsChecked="{Binding Settings.Theme, Mode=OneWay,
+                                              Converter={StaticResource EnumEquals},
+                                              ConverterParameter={x:Static services:ThemePreference.Dark}}" />
                     </MenuItem>
                     <MenuItem Header="_Help">
                         <MenuItem Header="_Keyboard shortcuts" InputGestureText="?"
@@ -76,27 +96,116 @@
                 BorderThickness="0,0,1,0"
                 BorderBrush="{DynamicResource LaneStrokeBrush}"
                 Visibility="{Binding Settings.SidebarCollapsed, Converter={StaticResource NotBoolToVisibility}}">
-            <StackPanel>
-                <TextBlock Text="WORKSPACES" Margin="4,4,0,8"
-                           FontFamily="{StaticResource UtilityFont}"
-                           FontSize="{StaticResource FontSizeCaption}"
-                           Foreground="{DynamicResource TextTertiaryBrush}" />
+            <DockPanel>
+                <!-- Labels and Archive live at the bottom, away from the workspaces:
+                     they're destinations, not peers of them. -->
+                <StackPanel DockPanel.Dock="Bottom">
+                    <Separator Margin="0,8,0,8" Background="{DynamicResource LaneStrokeBrush}" />
+                    <ui:Button Content="Labels"
+                               Icon="{ui:SymbolIcon Tag24}"
+                               Appearance="Transparent"
+                               HorizontalContentAlignment="Left"
+                               HorizontalAlignment="Stretch"
+                               Padding="10,7"
+                               Command="{Binding ShowLabelsCommand}" />
+
+                    <!-- Bigger than the rest, and a drop target: a card dragged here is
+                         archived. Being a drop target is the reason for the size — you have
+                         to be able to hit it while holding a card. -->
+                    <Border x:Name="ArchiveDropZone"
+                            dd:Drag.ArchiveZone="True"
+                            Margin="0,4,0,0"
+                            CornerRadius="6"
+                            Background="Transparent"
+                            BorderThickness="1"
+                            BorderBrush="Transparent">
+                        <ui:Button Content="Archive"
+                                   Icon="{ui:SymbolIcon Archive24}"
+                                   Appearance="Transparent"
+                                   HorizontalContentAlignment="Left"
+                                   HorizontalAlignment="Stretch"
+                                   Padding="10,12"
+                                   FontSize="{StaticResource FontSizeBody}"
+                                   ToolTip="Open the archive — or drag a card here to archive it"
+                                   Command="{Binding ShowArchiveCommand}" />
+                    </Border>
+                </StackPanel>
+
+                <StackPanel>
+                <Grid Margin="4,4,0,8">
+                    <TextBlock Text="WORKSPACES"
+                               VerticalAlignment="Center"
+                               FontFamily="{StaticResource UtilityFont}"
+                               FontSize="{StaticResource FontSizeCaption}"
+                               Foreground="{DynamicResource TextTertiaryBrush}" />
+                    <ui:Button HorizontalAlignment="Right" Appearance="Transparent"
+                               Padding="4,0" ToolTip="New workspace"
+                               Icon="{ui:SymbolIcon Add24}"
+                               Command="{Binding AddWorkspaceCommand}" />
+                </Grid>
                 <ItemsControl ItemsSource="{Binding Model.Workspaces}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type domain:Workspace}">
-                            <ui:Button Content="{Binding Name}"
-                                       Appearance="Transparent"
-                                       HorizontalContentAlignment="Left"
-                                       HorizontalAlignment="Stretch"
-                                       Margin="0,1"
-                                       dd:Drag.WorkspaceZone="True"
-                                       Command="{Binding DataContext.SelectWorkspaceCommand,
-                                                 RelativeSource={RelativeSource AncestorType=Window}}"
-                                       CommandParameter="{Binding}" />
+                            <Grid Margin="0,1"
+                                  Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <Grid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Rename"
+                                                  Command="{Binding PlacementTarget.Tag.BeginRenameWorkspaceCommand,
+                                                            RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                  CommandParameter="{Binding PlacementTarget.DataContext,
+                                                                     RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                        <Separator />
+                                        <MenuItem Header="Delete workspace"
+                                                  Command="{Binding PlacementTarget.Tag.DeleteWorkspaceCommand,
+                                                            RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                  CommandParameter="{Binding PlacementTarget.DataContext,
+                                                                     RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                    </ContextMenu>
+                                </Grid.ContextMenu>
+
+                                <ui:Button Content="{Binding Name}"
+                                           Appearance="Transparent"
+                                           HorizontalContentAlignment="Left"
+                                           HorizontalAlignment="Stretch"
+                                           dd:Drag.WorkspaceZone="True"
+                                           Command="{Binding DataContext.SelectWorkspaceCommand,
+                                                     RelativeSource={RelativeSource AncestorType=Window}}"
+                                           CommandParameter="{Binding}">
+                                    <ui:Button.InputBindings>
+                                        <MouseBinding MouseAction="LeftDoubleClick"
+                                                      Command="{Binding DataContext.BeginRenameWorkspaceCommand,
+                                                                RelativeSource={RelativeSource AncestorType=Window}}"
+                                                      CommandParameter="{Binding}" />
+                                    </ui:Button.InputBindings>
+                                    <ui:Button.Visibility>
+                                        <MultiBinding Converter="{StaticResource IsSelectedVisibility}"
+                                                      ConverterParameter="invert">
+                                            <Binding />
+                                            <Binding Path="DataContext.RenamingWorkspace"
+                                                     RelativeSource="{RelativeSource AncestorType=Window}" />
+                                        </MultiBinding>
+                                    </ui:Button.Visibility>
+                                </ui:Button>
+
+                                <ui:TextBox local:InlineEdit.Target="Workspace"
+                                            Text="{Binding DataContext.WorkspaceRenameText,
+                                                   RelativeSource={RelativeSource AncestorType=Window},
+                                                   UpdateSourceTrigger=PropertyChanged}">
+                                    <ui:TextBox.Visibility>
+                                        <MultiBinding Converter="{StaticResource IsSelectedVisibility}">
+                                            <Binding />
+                                            <Binding Path="DataContext.RenamingWorkspace"
+                                                     RelativeSource="{RelativeSource AncestorType=Window}" />
+                                        </MultiBinding>
+                                    </ui:TextBox.Visibility>
+                                </ui:TextBox>
+                            </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-            </StackPanel>
+                </StackPanel>
+            </DockPanel>
         </Border>
 
         <!-- Toolbar: title, search, filters, undo -->
@@ -114,16 +223,29 @@
                        Text="{Binding ActiveWorkspace.Name}" />
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <ui:TextBox x:Name="SearchBox" Width="220" Margin="0,0,8,0"
+                <ui:TextBox x:Name="SearchBox" Width="200" Margin="0,0,12,0"
                             PlaceholderText="Search  (F)"
                             Text="{Binding Filter.Text, UpdateSourceTrigger=PropertyChanged, Delay=120}" />
 
-                <ComboBox Width="128" Margin="0,0,8,0"
+                <!-- Labelled, because an unlabelled combo showing "Manual" tells you what it
+                     says, not what it does. -->
+                <TextBlock Text="Filter" VerticalAlignment="Center" Margin="0,0,6,0"
+                           Style="{StaticResource MetaText}"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <ComboBox Width="124" Margin="0,0,12,0"
                           ItemsSource="{Binding Model.Labels}"
                           SelectedValuePath="Id"
                           DisplayMemberPath="Name"
                           SelectedValue="{Binding Filter.LabelId}"
-                          ToolTip="Filter by label" />
+                          ToolTip="Show only cards with this label" />
+
+                <TextBlock Text="Sort" VerticalAlignment="Center" Margin="0,0,6,0"
+                           Style="{StaticResource MetaText}"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <ComboBox Width="118" Margin="0,0,8,0"
+                          ItemsSource="{Binding SortModes}"
+                          SelectedItem="{Binding Sort}"
+                          ToolTip="Sort is display-only — your manual order is kept. Dragging cards is disabled unless this is Manual." />
 
                 <ui:Button Icon="{ui:SymbolIcon Dismiss24}" Appearance="Transparent"
                            ToolTip="Clear filters"
@@ -155,14 +277,22 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type domain:Board}">
+                            <!-- Two borders, deliberately. The outer one keeps the theme's
+                                 DynamicResource background; the inner lays the board's
+                                 accent over it as a translucent wash. Compositing the two at
+                                 render time is what lets a recoloured lane still follow a
+                                 light/dark switch — a single pre-blended colour would be
+                                 computed against one theme and then rot. -->
                             <Border Width="{StaticResource LaneWidth}"
                                     dd:Drag.LaneRoot="True"
                                     Margin="0,0,12,0"
                                     CornerRadius="{StaticResource LaneRadius}"
-                                    Padding="{StaticResource LanePadding}"
                                     Background="{DynamicResource LaneBackgroundBrush}"
                                     BorderThickness="1"
-                                    BorderBrush="{DynamicResource LaneStrokeBrush}">
+                                    BorderBrush="{Binding Accent, Converter={StaticResource AccentWash}, ConverterParameter=90}">
+                              <Border CornerRadius="{StaticResource LaneRadius}"
+                                      Padding="{StaticResource LanePadding}"
+                                      Background="{Binding Accent, Converter={StaticResource AccentWash}, ConverterParameter=26}">
                                 <DockPanel>
                                     <!-- Lane header: accent, name, count. Also the drag
                                          handle for reordering boards. -->
@@ -171,21 +301,90 @@
                                           Cursor="SizeAll"
                                           dd:Drag.LaneSource="True"
                                           Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                                        <Grid.InputBindings>
+                                            <MouseBinding MouseAction="LeftDoubleClick"
+                                                          Command="{Binding DataContext.BeginRenameCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          CommandParameter="{Binding}" />
+                                        </Grid.InputBindings>
+
                                         <Grid.ContextMenu>
                                             <ContextMenu>
+                                                <MenuItem Header="Rename"
+                                                          Command="{Binding PlacementTarget.Tag.BeginRenameCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                          CommandParameter="{Binding PlacementTarget.DataContext,
+                                                                             RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                <MenuItem Header="Colour"
+                                                          ItemsSource="{Binding PlacementTarget.Tag.Accents,
+                                                                        RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                                                    <MenuItem.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <Border Width="12" Height="12" CornerRadius="3"
+                                                                        Margin="0,0,8,0"
+                                                                        Background="{Binding Converter={StaticResource HexBrush}}" />
+                                                                <TextBlock Text="{Binding}" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </MenuItem.ItemTemplate>
+                                                    <MenuItem.ItemContainerStyle>
+                                                        <Style TargetType="MenuItem">
+                                                            <Setter Property="Command"
+                                                                    Value="{Binding PlacementTarget.Tag.SetBoardAccentCommand,
+                                                                            RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                            <Setter Property="CommandParameter">
+                                                                <Setter.Value>
+                                                                    <MultiBinding Converter="{StaticResource AccentArgs}">
+                                                                        <Binding Path="PlacementTarget.DataContext"
+                                                                                 RelativeSource="{RelativeSource AncestorType=ContextMenu}" />
+                                                                        <Binding />
+                                                                    </MultiBinding>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </Style>
+                                                    </MenuItem.ItemContainerStyle>
+                                                </MenuItem>
+                                                <Separator />
                                                 <MenuItem Header="Archive board"
                                                           Command="{Binding PlacementTarget.Tag.ArchiveBoardCommand,
                                                                     RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                                          CommandParameter="{Binding}" />
+                                                          CommandParameter="{Binding PlacementTarget.DataContext,
+                                                                             RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                             </ContextMenu>
                                         </Grid.ContextMenu>
+
                                         <StackPanel Orientation="Horizontal">
                                             <Border Width="3" Height="14" CornerRadius="1.5"
                                                     Margin="0,0,8,0"
                                                     Background="{Binding Accent, Converter={StaticResource HexBrush}}" />
                                             <TextBlock Text="{Binding Name}"
-                                                       Style="{StaticResource LaneTitleText}" />
+                                                       Style="{StaticResource LaneTitleText}">
+                                                <TextBlock.Visibility>
+                                                    <MultiBinding Converter="{StaticResource IsSelectedVisibility}"
+                                                                  ConverterParameter="invert">
+                                                        <Binding />
+                                                        <Binding Path="DataContext.RenamingBoard"
+                                                                 RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                    </MultiBinding>
+                                                </TextBlock.Visibility>
+                                            </TextBlock>
                                         </StackPanel>
+
+                                        <ui:TextBox local:InlineEdit.Target="Board"
+                                                    Margin="11,0,28,0"
+                                                    Text="{Binding DataContext.RenameText,
+                                                           RelativeSource={RelativeSource AncestorType=Window},
+                                                           UpdateSourceTrigger=PropertyChanged}">
+                                            <ui:TextBox.Visibility>
+                                                <MultiBinding Converter="{StaticResource IsSelectedVisibility}">
+                                                    <Binding />
+                                                    <Binding Path="DataContext.RenamingBoard"
+                                                             RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                </MultiBinding>
+                                            </ui:TextBox.Visibility>
+                                        </ui:TextBox>
+
                                         <TextBlock Text="{Binding Cards.Count}"
                                                    HorizontalAlignment="Right"
                                                    VerticalAlignment="Center"
@@ -240,6 +439,7 @@
                                                       dd:Drag.CardZone="True" />
                                     </ScrollViewer>
                                 </DockPanel>
+                              </Border>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

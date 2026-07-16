@@ -14,7 +14,7 @@ namespace FlowBoard.Data;
 /// </summary>
 public sealed class FlowBoardStore : IDisposable
 {
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = 2;
 
     private readonly SqliteConnection _conn;
 
@@ -52,6 +52,37 @@ public sealed class FlowBoardStore : IDisposable
 
     // ---------------------------------------------------------------- migrations
 
+    /// <summary>
+    /// v1 -> v2: cards gain a start date.
+    ///
+    /// CREATE TABLE IF NOT EXISTS in Schema.sql only creates tables that don't exist — it
+    /// will not add a column to a table that already does. So an existing database needs
+    /// this ALTER explicitly, and the check has to be the column list rather than the
+    /// version, because a v1 file that Schema.sql just ran against still reports v1.
+    /// </summary>
+    private void MigrateV1ToV2(SqliteTransaction tx)
+    {
+        if (HasColumn(tx, "cards", "start_utc")) return;
+
+        using var cmd = _conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "ALTER TABLE cards ADD COLUMN start_utc TEXT;";
+        cmd.ExecuteNonQuery();
+    }
+
+    private bool HasColumn(SqliteTransaction tx, string table, string column)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = $"PRAGMA table_info({table});";
+
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+            if (string.Equals(r.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
     private void Migrate()
     {
         using var tx = _conn.BeginTransaction();
@@ -76,9 +107,21 @@ public sealed class FlowBoardStore : IDisposable
                 throw new InvalidOperationException(
                     $"Database schema v{v} is newer than this build (v{SchemaVersion}). Upgrade FlowBoard.");
 
-            // Forward-only migration ladder. Each step: v -> v+1, then bump meta.
-            // while (v < SchemaVersion) { switch (v) { case 1: MigrateV1ToV2(tx); break; } v++; }
-            // WriteMeta(tx, "schema_version", v.ToString());
+            // Forward-only migration ladder. Each step takes v -> v+1, and the whole ladder
+            // runs inside the caller's transaction, so a failure halfway up leaves the
+            // database exactly where it started rather than stranded between versions.
+            while (v < SchemaVersion)
+            {
+                switch (v)
+                {
+                    case 1: MigrateV1ToV2(tx); break;
+                    default:
+                        throw new InvalidOperationException($"No migration from schema v{v}.");
+                }
+                v++;
+            }
+
+            WriteMeta(tx, "schema_version", v.ToString(CultureInfo.InvariantCulture));
         }
 
         tx.Commit();
@@ -132,6 +175,7 @@ public sealed class FlowBoardStore : IDisposable
             Title = r.Str("title"),
             Description = r.Str("description"),
             Priority = (Priority)r.Int("priority"),
+            StartUtc = NullableTime(r, "start_utc"),
             DueUtc = NullableTime(r, "due_utc"),
             Position = r.Int("position"),
             Archived = r.Bool("archived"),
@@ -239,15 +283,17 @@ public sealed class FlowBoardStore : IDisposable
 
     public void Upsert(IDbTransaction tx, Card c) => Write(tx,
         """
-        INSERT INTO cards (id,board_id,title,description,priority,due_utc,position,archived,
+        INSERT INTO cards (id,board_id,title,description,priority,start_utc,due_utc,position,archived,
                            created_utc,modified_utc,touched_utc)
-        VALUES ($id,$b,$t,$d,$p,$due,$pos,$arc,$cre,$mod,$tch)
+        VALUES ($id,$b,$t,$d,$p,$start,$due,$pos,$arc,$cre,$mod,$tch)
         ON CONFLICT(id) DO UPDATE SET board_id=$b, title=$t, description=$d, priority=$p,
-                                      due_utc=$due, position=$pos, archived=$arc,
+                                      start_utc=$start, due_utc=$due, position=$pos, archived=$arc,
                                       modified_utc=$mod, touched_utc=$tch;
         """,
         ("$id", c.Id), ("$b", c.BoardId), ("$t", c.Title), ("$d", c.Description),
-        ("$p", (int)c.Priority), ("$due", c.DueUtc is null ? DBNull.Value : Iso(c.DueUtc.Value)),
+        ("$p", (int)c.Priority),
+        ("$start", c.StartUtc is null ? DBNull.Value : Iso(c.StartUtc.Value)),
+        ("$due", c.DueUtc is null ? DBNull.Value : Iso(c.DueUtc.Value)),
         ("$pos", c.Position), ("$arc", c.Archived), ("$cre", Iso(c.CreatedUtc)),
         ("$mod", Iso(c.ModifiedUtc)), ("$tch", Iso(c.TouchedUtc)));
 
@@ -350,9 +396,31 @@ public sealed class FlowBoardStore : IDisposable
 
     private static string Iso(DateTime t) => t.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
 
-    private static DateTime Time(SqliteDataReader r, string col) =>
-        DateTime.Parse(r.Str(col), CultureInfo.InvariantCulture,
-            DateTimeStyles.RoundtripKind | DateTimeStyles.AdjustToUniversal);
+    /// <summary>
+    /// Read a UTC timestamp written by <see cref="Iso"/>.
+    ///
+    /// RoundtripKind and AdjustToUniversal are mutually exclusive, and DateTime.Parse
+    /// validates the flag combination *before* it looks at the string — so passing both
+    /// throws unconditionally, on every call, whatever the input. The bug is invisible
+    /// against an empty database (no rows, no parses) and fires on the first read of the
+    /// first saved row, i.e. on the second launch. Nothing in a compile or a static check
+    /// can see it; only running the app twice can.
+    ///
+    /// RoundtripKind alone is correct here: the "o" format carries the Z, so the parse
+    /// already yields Kind=Utc. The switch is belt and braces for rows written by an older
+    /// build, or hand-edited, where the offset may be missing.
+    /// </summary>
+    private static DateTime Time(SqliteDataReader r, string col)
+    {
+        var parsed = DateTime.Parse(r.Str(col), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+
+        return parsed.Kind switch
+        {
+            DateTimeKind.Utc => parsed,
+            DateTimeKind.Local => parsed.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(parsed, DateTimeKind.Utc)   // no offset: it was written as UTC
+        };
+    }
 
     private static DateTime? NullableTime(SqliteDataReader r, string col)
     {

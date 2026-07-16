@@ -37,7 +37,13 @@ public partial class ShortcutsWindow : Wpf.Ui.Controls.FluentWindow
         new("Ctrl + Enter", "Save and close the card editor"),
         new("Drag a card", "Reorder, or move to another board"),
         new("Drag onto a workspace", "Move the card to that workspace"),
+        new("Drag onto Archive", "Archive the card"),
         new("Drag a board header", "Reorder boards"),
+        new("Double-click header", "Rename a board"),
+        new("Right-click header", "Board colour, rename, archive"),
+        new("Sort", "Display only — your manual order is kept, and returns"),
+        new("Double-click workspace", "Rename it"),
+        new("Right-click workspace", "Rename or delete"),
     };
 
     public ShortcutsWindow()

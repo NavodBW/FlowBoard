@@ -5,6 +5,7 @@
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\FlowBoard.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>12</LangVersion>
@@ -26,6 +27,13 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Data\Schema.sql" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <!-- Resource, not Content: the .ico ships inside the exe, so the window icon works
+         from a single-file publish with nothing loose beside it. -->
+    <Resource Include="Assets\FlowBoard.ico" />
   </ItemGroup>
 
 </Project>

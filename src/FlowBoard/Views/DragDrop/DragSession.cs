@@ -48,6 +48,9 @@ public sealed class DragSession
 
     public Board? TargetBoard { get; set; }
     public Workspace? TargetWorkspace { get; set; }
+
+    /// <summary>Pointer is over the Archive button.</summary>
+    public bool TargetArchive { get; set; }
     public int TargetIndex { get; set; } = -1;
 
     /// <summary>The panel we're currently computing indices against.</summary>

@@ -41,17 +41,22 @@ public sealed partial class LinkDraft : ObservableObject
 public sealed partial class CardEditorViewModel : ObservableObject
 {
     private readonly UndoRedoService _undo;
+    private readonly BoardModel _model;
 
     public Card Card { get; }
 
     [ObservableProperty] private string _title = "";
     [ObservableProperty] private string _description = "";
     [ObservableProperty] private Priority _priority;
+    [ObservableProperty] private DateTime? _startDate;
     [ObservableProperty] private DateTime? _dueDate;
     [ObservableProperty] private string _dueTime = "17:00";
     [ObservableProperty] private string _newChecklistText = "";
     [ObservableProperty] private string _newLinkTarget = "";
-    [ObservableProperty] private bool _isPreviewingDescription;
+    /// <summary>Rendered by default. A description is read far more often than it's
+    /// written, so the formatted view is the resting state and editing is the deliberate
+    /// act — not the other way round.</summary>
+    [ObservableProperty] private bool _isPreviewingDescription = true;
 
     public ObservableCollection<LabelToggle> Labels { get; } = new();
     public ObservableCollection<ChecklistDraft> Checklist { get; } = new();
@@ -69,11 +74,14 @@ public sealed partial class CardEditorViewModel : ObservableObject
     public CardEditorViewModel(Card card, BoardModel model, UndoRedoService undo)
     {
         Card = card;
+        _model = model;
         _undo = undo;
 
         Title = card.Title;
         Description = card.Description;
         Priority = card.Priority;
+
+        if (card.StartUtc is { } start) StartDate = start.ToLocalTime().Date;
 
         if (card.DueUtc is { } due)
         {
@@ -104,6 +112,24 @@ public sealed partial class CardEditorViewModel : ObservableObject
     private void RemoveChecklistItem(ChecklistDraft? item)
     {
         if (item is not null) Checklist.Remove(item);
+    }
+
+    /// <summary>Set by the window: opens a file picker. The VM shouldn't know what a
+    /// dialog is, so it asks for a path and gets one, or null.</summary>
+    public Func<string[]?>? RequestBrowseFiles { get; set; }
+
+    [RelayCommand]
+    private void BrowseForFiles()
+    {
+        if (RequestBrowseFiles?.Invoke() is not { } paths) return;
+
+        foreach (var path in paths)
+            Links.Add(new LinkDraft
+            {
+                Kind = LinkKind.File,
+                Target = path,
+                Display = System.IO.Path.GetFileName(path)
+            });
     }
 
     [RelayCommand]
@@ -137,6 +163,22 @@ public sealed partial class CardEditorViewModel : ObservableObject
     [RelayCommand]
     private void TogglePreview() => IsPreviewingDescription = !IsPreviewingDescription;
 
+    /// <summary>
+    /// Rebuild the label checkboxes from the model, preserving what's ticked.
+    ///
+    /// Needed because the label list is a snapshot taken when the editor opened, and the
+    /// label manager can be opened from inside the editor — a label created there would
+    /// otherwise be invisible until the card was closed and reopened.
+    /// </summary>
+    public void RefreshLabels()
+    {
+        var ticked = Labels.Where(l => l.IsChecked).Select(l => l.Label.Id).ToHashSet();
+
+        Labels.Clear();
+        foreach (var label in _model.Labels.OrderBy(l => l.Position))
+            Labels.Add(new LabelToggle { Label = label, IsChecked = ticked.Contains(label.Id) });
+    }
+
     private DateTime? ComposeDue()
     {
         if (DueDate is not { } date) return null;
@@ -164,6 +206,15 @@ public sealed partial class CardEditorViewModel : ObservableObject
         if (Priority != card.Priority)
             ops.Add(EditCardOp.Set(card, nameof(Card.Priority), "Change priority", ActivityKind.PriorityChanged,
                 c => c.Priority, (c, v) => c.Priority = v, Priority, Priority.ToString()));
+
+        var start = StartDate is { } sd
+            ? DateTime.SpecifyKind(sd.Date, DateTimeKind.Local).ToUniversalTime()
+            : (DateTime?)null;
+
+        if (start != card.StartUtc)
+            ops.Add(EditCardOp.Set(card, nameof(Card.StartUtc), "Change start date", ActivityKind.DueChanged,
+                c => c.StartUtc, (c, v) => c.StartUtc = v, start,
+                start is null ? "start cleared" : "starts " + start.Value.ToLocalTime().ToString("d")));
 
         var due = ComposeDue();
         if (due != card.DueUtc)

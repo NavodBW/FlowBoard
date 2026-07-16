@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using Microsoft.Win32;
 using FlowBoard.ViewModels;
 using FlowBoard.Views.Markdown;
 
@@ -22,20 +23,35 @@ public partial class CardDetailWindow : Wpf.Ui.Controls.FluentWindow
         DataContext = vm;
         vm.RequestClose = Close;
 
+        vm.RequestBrowseFiles = () =>
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = "Attach files",
+                Multiselect = true,        // attaching one file at a time is a chore
+                CheckFileExists = true,
+                Filter = "All files (*.*)|*.*"
+            };
+            return dialog.ShowDialog(this) == true ? dialog.FileNames : null;
+        };
+
         Loaded += (_, _) =>
         {
+            // The description renders on open, so the first paint is the formatted view
+            // rather than a blank panel waiting for a property to change.
+            Render();
+
             TitleBox.Focus();
             TitleBox.SelectAll();
         };
 
-        // Re-render the preview only when it's actually shown. Markdown parsing on every
-        // keystroke of a long description is wasted work nobody can see.
+        // Re-render only when the formatted view is actually on screen. Parsing Markdown on
+        // every keystroke of a long description is work nobody can see.
         vm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(CardEditorViewModel.IsPreviewingDescription)
-                              or nameof(CardEditorViewModel.Description)
-                && vm.IsPreviewingDescription)
-                DescriptionPreview.Document = MarkdownRenderer.Render(vm.Description);
+                              or nameof(CardEditorViewModel.Description))
+                Render();
         };
     }
 
@@ -64,6 +80,25 @@ public partial class CardDetailWindow : Wpf.Ui.Controls.FluentWindow
         }
 
         base.OnPreviewKeyDown(e);
+    }
+
+    private void Render()
+    {
+        if (_vm.IsPreviewingDescription)
+            DescriptionPreview.Document = MarkdownRenderer.Render(_vm.Description);
+    }
+
+    private void OnManageLabels(object sender, RoutedEventArgs e)
+    {
+        var shell = (Owner as MainWindow)?.DataContext as ViewModels.ShellViewModel;
+        if (shell is null) return;
+
+        new LabelsWindow(new ViewModels.LabelsViewModel(shell.Model, shell.Undo)) { Owner = this }
+            .ShowDialog();
+
+        // A label added or deleted while this editor is open has to show up in the
+        // checkbox list, which was built from a snapshot when the editor opened.
+        _vm.RefreshLabels();
     }
 
     private void OnDiscard(object sender, RoutedEventArgs e) => Close();

@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS cards (
     title        TEXT    NOT NULL,
     description  TEXT    NOT NULL DEFAULT '',
     priority     INTEGER NOT NULL DEFAULT 0,
+    start_utc    TEXT    NULL,
     due_utc      TEXT    NULL,
     position     INTEGER NOT NULL,
     archived     INTEGER NOT NULL DEFAULT 0,

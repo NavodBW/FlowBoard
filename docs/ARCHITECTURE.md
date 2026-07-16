@@ -264,3 +264,130 @@ WPF-UI 3.0 API drift (`FluentWindow`, `ui:SymbolIcon` glyph names) before anythi
 dotnet restore
 dotnet build -c Release
 ```
+
+
+## Bugs found on first run (and what they teach)
+
+**`'System.Windows.Documents.Run' is not a Visual or Visual3D`.** WPF's tree is not one
+tree. Text lives in ContentElements (`Run`, `Span`, `Hyperlink`) which have no place in the
+visual tree, and `VisualTreeHelper.GetParent` *throws* on them rather than returning null.
+`e.OriginalSource` is a `Run` for any click that lands on text — including every menu item
+label. A click handler that walks up from OriginalSource therefore crashes the first time
+someone clicks a word, and appears intermittent because clicking the padding around the
+word hits a `Border` and works fine. All upward walks now go through `TreeWalk.ParentOf`,
+which hops from the content tree back onto the visual tree.
+
+**The drag ghost pinned to the top-left.** An `AdornerLayer` positions its adorners during
+arrange and owns the adorner's transform; a `RenderTransform` set on the `Adorner` itself
+is overwritten. The ghost sat at the adorned element's origin and never moved — while drops
+still landed correctly, because the model never cared where the bitmap was drawn. Fix: the
+bitmap lives in a child `Image` and *that* carries the transform, which the layer doesn't
+touch. This also avoids the documented alternative (`GetDesiredTransform` +
+`AdornerLayer.Update()` per move), which forces a layout pass every frame of a drag that is
+already animating a gap and auto-scrolling.
+
+**Boards couldn't be renamed.** `RenameBoard` took a `(Board, string)` tuple as its command
+parameter — a type XAML has no syntax to construct. The command existed, compiled, and was
+unreachable from the UI. Not a broken feature; an unbuilt one. Replaced with the same
+`RenamingBoard` + draft-text shape quick-add uses. The lesson generalises: a command whose
+parameter can't be expressed in markup is dead code, and nothing in the build will say so.
+`SetBoardAccent` had the identical flaw, now fixed by packing both values through
+`AccentArgsConverter`.
+
+
+## Sorting, and why dragging turns off
+
+Sort is applied as `ListCollectionView.CustomSort` on each lane's **default view**. An
+ItemsControl bound to `board.Cards` renders through that view, so sorting reorders the
+display without touching `Card.Position`, the database, or the undo stack. Switch back to
+Manual and the hand-made order is simply still there — it was never disturbed.
+
+That's also why **card drag is disabled under any sort but Manual**. A drop computes an
+insertion index from what's on screen and writes it to `Position` — but under a sort the
+screen isn't showing `Position`, so the card would obey the sort and leap somewhere else.
+The options were: silently do something surprising, quietly rewrite the sort into positions
+(destroying the manual order), or refuse. Refusing is the only one that doesn't lie. Lane
+drag stays live, since lanes aren't sorted.
+
+Nulls sort last in every mode. A card with no due date isn't "due first" — it's not in the
+running, and floating it to the top buries the cards that are.
+
+## Schema v2
+
+Cards gained `start_utc`. `CREATE TABLE IF NOT EXISTS` does not add columns to a table that
+already exists, so an existing v1 database needs an explicit `ALTER TABLE` — that's
+`MigrateV1ToV2`, guarded on the column list rather than the version number, because a v1
+file that `Schema.sql` has just run against still reports v1. The whole ladder runs inside
+one transaction: a failure halfway leaves the database where it started rather than stranded
+between versions.
+
+## The depth wash
+
+Cards tint toward their lane's accent, strongest at the top. The ramp is eased, not linear:
+a linear fade spends most of its range in middle values nobody can distinguish, while an
+eased one keeps the top two or three cards visibly separated — which is the entire point of
+the effect.
+
+Like the lane wash, the converter returns the accent at varying **alpha** rather than a
+pre-blended colour, so it composites over whatever the theme's card background is and
+survives a light/dark switch. The accent is read from the lane's ItemsControl DataContext,
+because a Card only knows its `BoardId`, not its board.
+
+## Things that looked done but weren't
+
+`IsChecked` on a `MenuItem` does nothing without `IsCheckable="True"` — the property is set,
+the tick is never drawn. Card ageing and Collapse sidebar had exactly this, which is why
+they read as dead toggles with no visible state. Theme is now a radio set via
+`EnumEqualsConverter`.
+
+This is the same species of bug as the un-bindable tuple command parameter: code that
+compiles, looks correct in review, and is inert at runtime. Neither Roslyn nor the XAML
+checker can see either one.
+
+
+## The bug that only exists on the second launch
+
+`Time()` parsed timestamps with `DateTimeStyles.RoundtripKind | DateTimeStyles.AdjustToUniversal`.
+Those flags are mutually exclusive and `DateTime.Parse` validates the *combination* before it
+inspects the string — so the method threw on every call, regardless of input. It had never
+worked.
+
+It stayed hidden because of when it runs:
+
+- First launch: the database is empty, `Load()` reads no rows, no timestamp is ever parsed,
+  the seed runs, the app works, and real data gets saved.
+- Second launch: `Load()` hits a row, parses `created_utc`, throws.
+
+So the app could only ever start against a database with nothing in it — and the one code
+path guaranteed to run for every future user was the one never exercised. Worth being blunt
+about the limits this exposes: a compile can't see it, and neither Roslyn nor the XAML
+checker ever will. Only running the thing twice does. The `Iso`/`Time` pair is a
+round-trip, and round-trips are exactly what a unit test is for; there wasn't one, and this
+is the cost.
+
+The fix uses `RoundtripKind` alone — the `"o"` format carries the `Z`, so the parse already
+yields `Kind=Utc` — with an explicit switch for rows written without an offset, which are
+treated as UTC rather than silently reinterpreted as local time.
+
+
+## The icon was a real file defect, not a wiring mistake
+
+The first .ico had all seven frames PNG-compressed, including 16x16 — that's what Pillow
+emits by default. Windows' Win32 icon path (`LoadImage`, which is what `<ApplicationIcon>`
+feeds and what the shell and taskbar use) only reliably decodes PNG frames at 256x256;
+everything smaller must be a BMP/DIB. So Windows found no frame it could read at taskbar
+size and fell back to the generic application icon. WPF's own decoder handles PNG happily,
+which is exactly why an icon like this can look correct in one place and generic in another.
+
+The .ico is now written by hand: BMP frames (BITMAPINFOHEADER with doubled height, bottom-up
+BGRA, plus the 1bpp AND mask that LoadImage still expects even at 32bpp) for every size up
+to 128, PNG only at 256. Sizes 20 and 40 were added because Windows reaches for those at
+125% and 150% DPI.
+
+## Archive as a drop target
+
+`Drag.ArchiveZone` beats every other zone in the hit test. It's the smallest target on
+screen and it sits directly below the workspace list, so a pointer over it is a decision
+rather than a near miss on the workspace above. Archiving isn't a move, so it doesn't build
+a `MoveCardOp` — it calls through the shell, which owns what selection should do afterwards.
+The button is deliberately oversized: it has to be hittable while you're holding a card.

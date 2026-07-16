@@ -5,6 +5,7 @@
         xmlns:domain="clr-namespace:FlowBoard.Domain"
         Title="Archive"
         Width="640" Height="600"
+        Icon="pack://application:,,,/Assets/FlowBoard.ico"
         WindowBackdropType="Mica"
         ExtendsContentIntoTitleBar="True"
         WindowStartupLocation="CenterOwner"

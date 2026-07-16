@@ -49,6 +49,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         vm.RequestShowShortcuts = () => new ShortcutsWindow { Owner = this }.ShowDialog();
         vm.RequestShowArchive = () => new ArchiveWindow(vm) { Owner = this }.ShowDialog();
+
+        vm.RequestShowLabels = () =>
+            new LabelsWindow(new LabelsViewModel(vm.Model, vm.Undo)) { Owner = this }.ShowDialog();
         vm.RequestFocusSearch = () => { SearchBox.Focus(); SearchBox.SelectAll(); };
 
         vm.RequestConfirm = message => MessageBox.Show(this, message, "FlowBoard",
@@ -145,12 +148,16 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         base.OnPreviewMouseLeftButtonDown(e);
     }
 
-    private static Card? FindCard(DependencyObject? source)
-    {
-        for (var node = source; node is not null; node = System.Windows.Media.VisualTreeHelper.GetParent(node))
-            if (node is FrameworkElement { DataContext: Card card }) return card;
-        return null;
-    }
+    /// <summary>
+    /// Which card was clicked, if any.
+    ///
+    /// Goes through TreeWalk rather than VisualTreeHelper directly. e.OriginalSource is a
+    /// Run whenever the click lands on text — including every menu item label — and
+    /// VisualTreeHelper.GetParent throws on a Run instead of returning null. This method
+    /// runs on every left-click anywhere in the window, so a naive walk crashes the app the
+    /// first time someone clicks a word.
+    /// </summary>
+    private static Card? FindCard(DependencyObject? source) => TreeWalk.DataContextOf<Card>(source);
 
     private static bool IsTextInputFocused() =>
         Keyboard.FocusedElement is TextBoxBase

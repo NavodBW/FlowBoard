@@ -1,0 +1,107 @@
+<ui:FluentWindow x:Class="FlowBoard.Views.LabelsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:local="clr-namespace:FlowBoard.Views"
+        xmlns:domain="clr-namespace:FlowBoard.Domain"
+        Title="Labels"
+        Width="540" Height="600"
+        Icon="pack://application:,,,/Assets/FlowBoard.ico"
+        WindowBackdropType="Mica"
+        ExtendsContentIntoTitleBar="True"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Window.Resources>
+        <local:HexToBrushConverter x:Key="HexBrush" />
+        <local:AccentArgsConverter x:Key="AccentArgs" />
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Labels" />
+
+        <!-- Add -->
+        <Grid Grid.Row="1" Margin="20,4,20,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ui:TextBox x:Name="NewLabelBox"
+                        Text="{Binding NewLabelName, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="New label name, Enter to add" />
+            <ui:Button Grid.Column="1" Content="Add" Appearance="Primary" Margin="6,0,0,0"
+                       Command="{Binding AddCommand}" />
+        </Grid>
+
+        <!-- List -->
+        <ListBox Grid.Row="2" Margin="20,0,20,12"
+                 ItemsSource="{Binding Model.Labels}"
+                 SelectedItem="{Binding Selected}"
+                 Background="Transparent" BorderThickness="0"
+                 HorizontalContentAlignment="Stretch"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemTemplate>
+                <DataTemplate DataType="{x:Type domain:Label}">
+                    <Grid Margin="0,3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Width="14" Height="14" CornerRadius="4"
+                                VerticalAlignment="Center" Margin="0,0,10,0"
+                                Background="{Binding Color, Converter={StaticResource HexBrush}}" />
+
+                        <ui:TextBox Grid.Column="1"
+                                    Text="{Binding Name, UpdateSourceTrigger=LostFocus}"
+                                    LostFocus="OnNameCommitted" Tag="{Binding}" />
+
+                        <ui:Button Grid.Column="2" Margin="6,0,0,0"
+                                   Appearance="Transparent"
+                                   Icon="{ui:SymbolIcon Delete24}"
+                                   Click="OnDelete" Tag="{Binding}" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Colour picker for the selected label -->
+        <Border Grid.Row="3" Padding="20,12,20,16" BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource LaneStrokeBrush}">
+            <StackPanel>
+                <TextBlock Text="Colour of the selected label" Style="{StaticResource MetaText}"
+                           Margin="0,0,0,8" />
+                <ItemsControl ItemsSource="{Binding Palette}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Width="30" Height="30" Margin="0,0,8,0"
+                                    BorderThickness="0" Cursor="Hand"
+                                    Background="{Binding Converter={StaticResource HexBrush}}"
+                                    Command="{Binding DataContext.SetColorCommand,
+                                              RelativeSource={RelativeSource AncestorType=Window}}">
+                                <Button.CommandParameter>
+                                    <MultiBinding Converter="{StaticResource AccentArgs}">
+                                        <Binding Path="DataContext.Selected"
+                                                 RelativeSource="{RelativeSource AncestorType=Window}" />
+                                        <Binding />
+                                    </MultiBinding>
+                                </Button.CommandParameter>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

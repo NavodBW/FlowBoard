@@ -16,6 +16,7 @@
     <local:CountToVisibilityConverter x:Key="CountToVisibility" />
     <local:NullToVisibilityConverter x:Key="NullToVisibility" />
     <local:CardMatchConverter x:Key="CardMatch" />
+    <local:CardDepthWashConverter x:Key="DepthWash" />
     <local:BoardIsSelectedConverter x:Key="IsSelected" />
 
     <!-- Label chip. Colour is user data, so the chip is a tinted rule + text rather than
@@ -163,6 +164,25 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
+
+                <!-- Depth wash: strongest at the top of the lane, fading down. Sits behind
+                     everything (first child, both columns) and composites over the theme's
+                     card background rather than replacing it, so it survives a theme switch.
+                     The accent comes from the lane's ItemsControl, whose DataContext is the
+                     Board — the card itself only knows its BoardId. -->
+                <Border Grid.Column="0" Grid.ColumnSpan="2"
+                        CornerRadius="{StaticResource CardRadius}"
+                        IsHitTestVisible="False">
+                    <Border.Background>
+                        <MultiBinding Converter="{StaticResource DepthWash}">
+                            <Binding Path="Position" />
+                            <Binding Path="DataContext.Cards.Count"
+                                     RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                            <Binding Path="DataContext.Accent"
+                                     RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                        </MultiBinding>
+                    </Border.Background>
+                </Border>
 
                 <!-- Strip host stretches the full card height; the strip fills a fraction
                      of it, anchored top. -->

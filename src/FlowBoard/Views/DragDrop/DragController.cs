@@ -26,8 +26,10 @@ public sealed class DragController
     private readonly List<(FrameworkElement Element, Board Board, Panel Panel)> _cardZones = new();
     private readonly List<(FrameworkElement Element, Workspace Workspace)> _workspaceZones = new();
     private readonly List<(FrameworkElement Element, Panel Panel)> _laneZones = new();
+    private readonly List<FrameworkElement> _archiveZones = new();
 
     private DragSession? _session;
+    private UIElement? _adorned;
     private Point _pressOrigin;
     private FrameworkElement? _pressCandidate;
     private DragKind _pendingKind;
@@ -56,6 +58,11 @@ public sealed class DragController
         _workspaceZones.Add((element, ws));
     }
 
+    public void RegisterArchiveZone(FrameworkElement element)
+    {
+        if (!_archiveZones.Contains(element)) _archiveZones.Add(element);
+    }
+
     public void RegisterLaneZone(FrameworkElement element, Panel panel)
     {
         _laneZones.RemoveAll(z => ReferenceEquals(z.Element, element));
@@ -67,6 +74,7 @@ public sealed class DragController
         _cardZones.RemoveAll(z => ReferenceEquals(z.Element, element));
         _workspaceZones.RemoveAll(z => ReferenceEquals(z.Element, element));
         _laneZones.RemoveAll(z => ReferenceEquals(z.Element, element));
+        _archiveZones.RemoveAll(z => ReferenceEquals(z, element));
     }
 
     public void RegisterScroller(ScrollViewer view, Orientation axis) => _scroller.Register(view, axis);
@@ -102,7 +110,8 @@ public sealed class DragController
 
     private void Begin(FrameworkElement source, DragKind kind, MouseEventArgs e)
     {
-        var layer = AdornerLayer.GetAdornerLayer(_window.Content as Visual ?? _window);
+        _adorned = _window.Content as UIElement ?? _window;
+        var layer = AdornerLayer.GetAdornerLayer(_adorned);
         if (layer is null) return;
 
         Board sourceBoard;
@@ -112,6 +121,11 @@ public sealed class DragController
 
         if (kind == DragKind.Card)
         {
+            // Reordering by hand only means something when the screen is showing the hand-made
+            // order. Under a sort, the drop would set a position the view isn't honouring and
+            // the card would jump somewhere else entirely.
+            if (!Vm.CanDragCards) return;
+
             if (source.DataContext is not Card c) return;
             card = c;
             if (!Vm.Model.BoardsById.TryGetValue(c.BoardId, out var b)) return;
@@ -130,7 +144,7 @@ public sealed class DragController
 
         // Snapshot before hiding: the ghost is a bitmap of a visible element. Take it
         // from the template root, which is tight to the card's own bounds.
-        var ghost = new DragGhostAdorner(_window.Content as UIElement ?? _window, source);
+        var ghost = new DragGhostAdorner(_adorned, source);
 
         // What we hide and exclude from the slot cache is the *layout* container — the
         // ContentPresenter the ItemsControl generated — not the Border the template put
@@ -170,7 +184,16 @@ public sealed class DragController
         if (_session is not { } s) return;
 
         var inWindow = e.GetPosition(_window);
-        s.Ghost?.MoveTo(new Point(inWindow.X - s.GrabOffset.X, inWindow.Y - s.GrabOffset.Y));
+
+        // The ghost lives in the adorner layer, whose origin is the adorned element — not
+        // the window. With ExtendsContentIntoTitleBar the two differ by the resize border,
+        // which is small enough to look like sloppy grab-offset maths rather than a bug.
+        if (_adorned is not null)
+        {
+            var inAdorned = e.GetPosition(_adorned);
+            s.Ghost?.MoveTo(new Point(inAdorned.X - s.GrabOffset.X, inAdorned.Y - s.GrabOffset.Y));
+        }
+
         _scroller.UpdatePointer(_window.PointToScreen(inWindow));
 
         if (s.Kind == DragKind.Card) UpdateCardTarget(s, inWindow);
@@ -179,6 +202,21 @@ public sealed class DragController
 
     private void UpdateCardTarget(DragSession s, Point inWindow)
     {
+        // Archive beats everything. It's the smallest target on screen and it sits right
+        // under the workspace list, so if the pointer is over it, that's a decision — not a
+        // near miss on the workspace above.
+        if (_archiveZones.Any(z => Contains(z, inWindow)))
+        {
+            GapAnimator.ClearAll(s, Orientation.Vertical);
+            s.TargetArchive = true;
+            s.TargetWorkspace = null;
+            s.TargetBoard = null;
+            s.TargetPanel = null;
+            return;
+        }
+
+        s.TargetArchive = false;
+
         // A workspace in the sidebar wins over a lane: it's a smaller, deliberate target,
         // and it's the gesture that replaced the old board-tab strip.
         var ws = _workspaceZones.FirstOrDefault(z => Contains(z.Element, inWindow));
@@ -316,6 +354,15 @@ public sealed class DragController
 
         if (s.Kind == DragKind.Card && s.Card is { } card)
         {
+            if (s.TargetArchive)
+            {
+                // Archiving isn't a move, so it doesn't build a MoveCardOp — it goes
+                // straight through the shell, which owns what selection should do next.
+                Teardown();
+                Vm.ArchiveCardById(card.Id);
+                return;
+            }
+
             if (s.TargetWorkspace is { } ws)
             {
                 // Dropped on a workspace: land in its first lane. Any other choice would
@@ -363,8 +410,8 @@ public sealed class DragController
         GapAnimator.ClearAll(s, axis);
         foreach (var slot in s.Slots) GapAnimator.Reset(slot.Container);
 
-        if (s.Ghost is not null)
-            AdornerLayer.GetAdornerLayer(_window.Content as Visual ?? _window)?.Remove(s.Ghost);
+        if (s.Ghost is not null && _adorned is not null)
+            AdornerLayer.GetAdornerLayer(_adorned)?.Remove(s.Ghost);
 
         s.SourceContainer.Visibility = Visibility.Visible;
         GapAnimator.Reset(s.SourceContainer);

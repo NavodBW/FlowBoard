@@ -8,6 +8,7 @@
         Title="Card"
         Width="720" Height="760"
         MinWidth="560" MinHeight="480"
+        Icon="pack://application:,,,/Assets/FlowBoard.ico"
         WindowBackdropType="Mica"
         ExtendsContentIntoTitleBar="True"
         WindowStartupLocation="CenterOwner"
@@ -37,11 +38,13 @@
                             FontSize="18" FontFamily="{StaticResource DisplayFont}"
                             PlaceholderText="Card title" Margin="0,0,0,14" />
 
-                <!-- Priority + due -->
+                <!-- Priority + start + due -->
                 <Grid Margin="0,0,0,14">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="8" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="8" />
                         <ColumnDefinition Width="Auto" />
@@ -54,19 +57,28 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="2">
-                        <TextBlock Text="Due date" Style="{StaticResource MetaText}" Margin="0,0,0,4" />
-                        <DatePicker SelectedDate="{Binding DueDate}" Width="150" />
+                        <TextBlock Text="Start" Style="{StaticResource MetaText}" Margin="0,0,0,4" />
+                        <DatePicker SelectedDate="{Binding StartDate}" Width="130" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="4">
+                        <TextBlock Text="Due" Style="{StaticResource MetaText}" Margin="0,0,0,4" />
+                        <DatePicker SelectedDate="{Binding DueDate}" Width="130" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="6">
                         <TextBlock Text="Time" Style="{StaticResource MetaText}" Margin="0,0,0,4" />
                         <ui:TextBox Text="{Binding DueTime, UpdateSourceTrigger=PropertyChanged}"
-                                    Width="72" PlaceholderText="17:00" />
+                                    Width="66" PlaceholderText="17:00" />
                     </StackPanel>
                 </Grid>
 
                 <!-- Labels -->
-                <TextBlock Text="Labels" Style="{StaticResource MetaText}" Margin="0,0,0,6" />
+                <Grid Margin="0,0,0,6">
+                    <TextBlock Text="Labels" Style="{StaticResource MetaText}" />
+                    <ui:Button HorizontalAlignment="Right" Appearance="Transparent" Padding="6,2"
+                               Content="Manage labels…" Click="OnManageLabels" />
+                </Grid>
                 <ItemsControl ItemsSource="{Binding Labels}" Margin="0,0,0,14">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
@@ -86,9 +98,20 @@
 
                 <!-- Description: edit / preview -->
                 <Grid Margin="0,0,0,6">
-                    <TextBlock Text="Description (Markdown)" Style="{StaticResource MetaText}" />
+                    <TextBlock Text="Description" Style="{StaticResource MetaText}" />
                     <ui:Button HorizontalAlignment="Right" Appearance="Transparent" Padding="6,2"
-                               Content="Preview" Command="{Binding TogglePreviewCommand}" />
+                               Command="{Binding TogglePreviewCommand}">
+                        <ui:Button.Style>
+                            <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                <Setter Property="Content" Value="Done" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsPreviewingDescription}" Value="True">
+                                        <Setter Property="Content" Value="Edit" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ui:Button.Style>
+                    </ui:Button>
                 </Grid>
 
                 <ui:TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
@@ -155,7 +178,8 @@
                                 </Grid.ColumnDefinitions>
                                 <ui:Button Appearance="Transparent" HorizontalContentAlignment="Left"
                                            HorizontalAlignment="Stretch"
-                                           Content="{Binding Target}"
+                                           Content="{Binding Display}"
+                                           ToolTip="{Binding Target}"
                                            Command="{Binding DataContext.OpenLinkCommand,
                                                      RelativeSource={RelativeSource AncestorType=Window}}"
                                            CommandParameter="{Binding}" />
@@ -173,11 +197,15 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <ui:TextBox Text="{Binding NewLinkTarget, UpdateSourceTrigger=PropertyChanged}"
-                                PlaceholderText="https://…  or  C:\path\to\file" />
+                                PlaceholderText="Paste a link, or Browse for a file" />
                     <ui:Button Grid.Column="1" Content="Add" Margin="6,0,0,0"
                                Command="{Binding AddLinkCommand}" />
+                    <ui:Button Grid.Column="2" Content="Browse…" Margin="6,0,0,0"
+                               Icon="{ui:SymbolIcon FolderOpen24}"
+                               Command="{Binding BrowseForFilesCommand}" />
                 </Grid>
 
                 <!-- Activity -->

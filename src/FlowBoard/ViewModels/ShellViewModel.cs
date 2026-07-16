@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
+using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FlowBoard.Data;
@@ -20,8 +22,12 @@ public enum MoveDirection { Left, Right, Up, Down }
 /// </summary>
 public sealed partial class ShellViewModel : ObservableObject
 {
-    private static readonly string[] AccentPalette =
+    /// <summary>Board accents. Public because the colour picker binds to it — one list,
+    /// so a new board's default and the swatch grid can never drift apart.</summary>
+    public static readonly string[] AccentPalette =
         { "#4C8DFF", "#37C2A8", "#B586F0", "#F5A524", "#E5484D", "#8A94A6" };
+
+    public IReadOnlyList<string> Accents => AccentPalette;
 
     private readonly FlowBoardStore _store;
 
@@ -40,11 +46,32 @@ public sealed partial class ShellViewModel : ObservableObject
 
     [ObservableProperty] private string _quickAddText = "";
 
+    /// <summary>Which board's header is in rename mode, and the draft name.</summary>
+    [ObservableProperty] private Board? _renamingBoard;
+    [ObservableProperty] private string _renameText = "";
+
+    /// <summary>Which workspace's sidebar row is in rename mode, and its draft name.
+    /// Separate from the board rename state so the two can never fight over one text box.</summary>
+    [ObservableProperty] private Workspace? _renamingWorkspace;
+    [ObservableProperty] private string _workspaceRenameText = "";
+
+    /// <summary>Display order. Manual means "however the user dragged them".</summary>
+    [ObservableProperty] private CardSort _sort = CardSort.Manual;
+
+    public IReadOnlyList<CardSort> SortModes { get; } = Enum.GetValues<CardSort>();
+
+    /// <summary>Dragging a card while a sort is active would be a lie: the drop sets a
+    /// position the view isn't showing, so the card appears to leap somewhere else. Rather
+    /// than silently doing something surprising, card drag is off unless the order on screen
+    /// is the order being changed. Lane drag stays live — lanes aren't sorted.</summary>
+    public bool CanDragCards => Sort == CardSort.Manual;
+
     /// <summary>Set by the window; opens the modal editor. The VM shouldn't know what a
     /// Window is, so it asks.</summary>
     public Action<Card>? RequestOpenCard { get; set; }
     public Action? RequestShowShortcuts { get; set; }
     public Action? RequestShowArchive { get; set; }
+    public Action? RequestShowLabels { get; set; }
     public Func<bool, string?>? RequestFilePath { get; set; }
     public Func<string, bool>? RequestConfirm { get; set; }
     public Action? RequestFocusSearch { get; set; }
@@ -58,6 +85,29 @@ public sealed partial class ShellViewModel : ObservableObject
 
         ActiveWorkspace = model.Workspaces.FirstOrDefault(w => !w.Archived);
         FocusedBoard = ActiveWorkspace?.Boards.FirstOrDefault();
+    }
+
+    partial void OnSortChanged(CardSort value)
+    {
+        ApplySort();
+        OnPropertyChanged(nameof(CanDragCards));
+    }
+
+    /// <summary>
+    /// Push the sort onto every lane's default view.
+    ///
+    /// An ItemsControl bound to board.Cards renders through that collection's *default*
+    /// view, so setting CustomSort there reorders the display without the ItemsSource
+    /// binding knowing anything happened — and without touching Position, the database, or
+    /// the undo stack. Manual clears it, and the hand-made order is simply still there.
+    /// </summary>
+    public void ApplySort()
+    {
+        foreach (var board in Model.BoardsById.Values)
+        {
+            if (CollectionViewSource.GetDefaultView(board.Cards) is not ListCollectionView view) continue;
+            view.CustomSort = Sort == CardSort.Manual ? null : new CardComparer(Sort, Model);
+        }
     }
 
     partial void OnActiveWorkspaceChanged(Workspace? value)
@@ -156,6 +206,7 @@ public sealed partial class ShellViewModel : ObservableObject
             Accent = AccentPalette[ws.Boards.Count % AccentPalette.Length]
         };
         Undo.Execute(new AddBoardOp(board, ws.Id, ws.Boards.Count));
+        ApplySort();   // the new lane has a fresh view that knows nothing about the sort
         FocusedBoard = board;
     }
 
@@ -167,18 +218,49 @@ public sealed partial class ShellViewModel : ObservableObject
         Undo.Execute(new ArchiveBoardOp(target.Id, true));
     }
 
+    /// <summary>
+    /// Inline rename, same shape as quick-add: which board is in edit mode, plus the draft
+    /// text. The old design took a (Board, string) tuple as a command parameter, which XAML
+    /// has no way to construct — so the command existed and was unreachable. That's why
+    /// boards couldn't be renamed: not a broken feature, an unbuilt one.
+    /// </summary>
     [RelayCommand]
-    private void RenameBoard((Board Board, string Name) arg)
+    private void BeginRename(Board? board)
     {
-        if (string.IsNullOrWhiteSpace(arg.Name) || arg.Name == arg.Board.Name) return;
-        Undo.Execute(EditBoardOp.Set(arg.Board, nameof(Board.Name), "Rename board",
-            b => b.Name, (b, v) => b.Name = v, arg.Name.Trim()));
+        var target = board ?? FocusedBoard;
+        if (target is null) return;
+
+        RenamingBoard = target;
+        RenameText = target.Name;
+    }
+
+    public void CommitRename()
+    {
+        if (RenamingBoard is not { } board) return;
+
+        var name = RenameText.Trim();
+        if (name.Length > 0 && name != board.Name)
+            Undo.Execute(EditBoardOp.Set(board, nameof(Board.Name), "Rename board",
+                b => b.Name, (b, v) => b.Name = v, name));
+
+        RenamingBoard = null;
     }
 
     [RelayCommand]
-    private void SetBoardAccent((Board Board, string Accent) arg) =>
-        Undo.Execute(EditBoardOp.Set(arg.Board, nameof(Board.Accent), "Change accent",
-            b => b.Accent, (b, v) => b.Accent = v, arg.Accent));
+    private void CancelRename() => RenamingBoard = null;
+
+    /// <summary>Recolour a whole lane. The parameter is packed by AccentArgsConverter,
+    /// because a command needs both the board and the colour and XAML can only hand a
+    /// single CommandParameter across.</summary>
+    [RelayCommand]
+    private void SetBoardAccent(object? arg)
+    {
+        if (arg is not AccentArgs { Board: { } board, Hex: { } hex }) return;
+        if (board.Accent == hex) return;
+
+        Undo.Execute(EditBoardOp.Set(board, nameof(Board.Accent), "Change board colour",
+            b => b.Accent, (b, v) => b.Accent = v, hex));
+    }
 
     // ------------------------------------------------------------ keyboard
 
@@ -242,9 +324,102 @@ public sealed partial class ShellViewModel : ObservableObject
         if (ws is not null) ActiveWorkspace = ws;
     }
 
+    [RelayCommand]
+    private void AddWorkspace()
+    {
+        var ws = new Workspace { Name = "New workspace" };
+
+        // A workspace with no boards is a dead end — there's nowhere to put a card and no
+        // obvious next move. Seed it the way the app seeds itself on first run.
+        var names = new[] { "Now", "Next", "Later" };
+        for (var i = 0; i < names.Length; i++)
+            ws.Boards.Add(new Board
+            {
+                WorkspaceId = ws.Id,
+                Name = names[i],
+                Accent = AccentPalette[i % AccentPalette.Length],
+                Position = i
+            });
+
+        Undo.Barrier();
+        Undo.Execute(new AddWorkspaceOp(ws));
+        Undo.Barrier();
+
+        ApplySort();
+        ActiveWorkspace = ws;
+        BeginRenameWorkspaceCommand.Execute(ws);   // it's called "New workspace"; name it now
+    }
+
+    [RelayCommand]
+    private void BeginRenameWorkspace(Workspace? ws)
+    {
+        var target = ws ?? ActiveWorkspace;
+        if (target is null) return;
+
+        RenamingWorkspace = target;
+        WorkspaceRenameText = target.Name;
+    }
+
+    public void CommitRenameWorkspace()
+    {
+        if (RenamingWorkspace is not { } ws) return;
+
+        var name = WorkspaceRenameText.Trim();
+        if (name.Length > 0 && name != ws.Name)
+            Undo.Execute(EditWorkspaceOp.Set(ws, nameof(Workspace.Name), "Rename workspace",
+                w => w.Name, (w, v) => w.Name = v, name));
+
+        RenamingWorkspace = null;
+    }
+
+    [RelayCommand]
+    private void CancelRenameWorkspace() => RenamingWorkspace = null;
+
+    [RelayCommand]
+    private void DeleteWorkspace(Workspace? ws)
+    {
+        var target = ws ?? ActiveWorkspace;
+        if (target is null) return;
+
+        // The last workspace can't go: an empty sidebar has no way back to a board.
+        if (Model.Workspaces.Count(w => !w.Archived) <= 1)
+        {
+            RequestConfirm?.Invoke(
+                "This is the only workspace, so it can't be deleted." + Environment.NewLine + Environment.NewLine
+                + "Make another one first if you want to move on from this.");
+            return;
+        }
+
+        var cards = target.Boards.Sum(b => b.Cards.Count);
+        var detail = cards == 0
+            ? $"Delete the workspace “{target.Name}”?"
+            : $"Delete the workspace “{target.Name}”?" + Environment.NewLine + Environment.NewLine
+              + $"It holds {target.Boards.Count} board{(target.Boards.Count == 1 ? "" : "s")} "
+              + $"and {cards} card{(cards == 1 ? "" : "s")}. Ctrl+Z puts it all back.";
+
+        if (RequestConfirm?.Invoke(detail) != true) return;
+
+        Undo.Barrier();
+        Undo.Execute(new ArchiveWorkspaceOp(target.Id, true));
+        Undo.Barrier();
+
+        if (ReferenceEquals(ActiveWorkspace, target))
+            ActiveWorkspace = Model.Workspaces.FirstOrDefault(w => !w.Archived);
+    }
+
+    /// <summary>Archive a card by dropping it on the sidebar's Archive button.</summary>
+    public void ArchiveCardById(string cardId)
+    {
+        if (!Model.CardsById.TryGetValue(cardId, out var card)) return;
+        Undo.Execute(new ArchiveCardOp(card.Id, true));
+        Undo.Barrier();
+        if (ReferenceEquals(SelectedCard, card)) SelectedCard = null;
+    }
+
     [RelayCommand] private void UndoLast() => Undo.Undo();
     [RelayCommand] private void RedoLast() => Undo.Redo();
     [RelayCommand] private void ShowShortcuts() => RequestShowShortcuts?.Invoke();
+    [RelayCommand] private void ShowLabels() => RequestShowLabels?.Invoke();
     [RelayCommand] private void ShowArchive() => RequestShowArchive?.Invoke();
     [RelayCommand] private void FocusSearch() => RequestFocusSearch?.Invoke();
 
@@ -307,6 +482,7 @@ public sealed partial class ShellViewModel : ObservableObject
 
         SelectedCard = null;
         ActiveWorkspace = Model.Workspaces.FirstOrDefault(w => !w.Archived);
+        ApplySort();
     }
 
     // ------------------------------------------------------------ archive
@@ -323,3 +499,6 @@ public sealed partial class ShellViewModel : ObservableObject
 
     public void PurgeCard(Card card) => Undo.ExecuteIrreversible(new PurgeCardOp(card.Id));
 }
+
+/// <summary>A board plus a colour, so a single CommandParameter can carry both.</summary>
+public sealed record AccentArgs(Board? Board, string? Hex);
